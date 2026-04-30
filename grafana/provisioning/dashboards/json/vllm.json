@@ -851,16 +851,6 @@
           "color": {
             "mode": "palette-classic"
           },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
           "unit": "tps"
         },
         "overrides": [
@@ -904,22 +894,19 @@
       },
       "id": 301,
       "options": {
-        "displayMode": "gradient",
-        "maxVizHeight": 300,
-        "minVizHeight": 50,
-        "minVizWidth": 75,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "lineWidth": 1,
+        "fillOpacity": 10,
+        "gradientMode": "none",
+        "pointSize": 5,
+        "showPoints": "never"
       },
       "pluginVersion": "12.3.0",
       "targets": [
@@ -943,7 +930,7 @@
         }
       ],
       "title": "Token Throughput",
-      "type": "bargauge"
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -1137,7 +1124,7 @@
           "color": "rgba(255,0,255,0.7)"
         },
         "filterValues": {
-          "le": 1e-9
+          "le": 1e-09
         },
         "legend": {
           "show": true
@@ -2046,7 +2033,7 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
