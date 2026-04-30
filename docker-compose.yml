@@ -1,0 +1,60 @@
+services:
+  gemma4:
+    image: vllm/vllm-openai:gemma4-cu130
+    ports:
+      - "8000:8000"
+    ipc: host
+    shm_size: '16g'
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - --model
+      - google/gemma-4-26B-A4B-it
+      - --max-model-len
+      - "262144"
+      - --gpu-memory-utilization
+      - "0.50"
+      - --quantization
+      - fp8
+      - --kv-cache-dtype
+      - fp8
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --async-scheduling
+      - --enable-auto-tool-choice
+      - --reasoning-parser
+      - gemma4
+      - --tool-call-parser
+      - gemma4
+      - --chat-template
+      - examples/tool_chat_template_gemma4.jinja
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --max-num-seqs
+      - "4"
+      - --max-num-batched-tokens
+      - "8192"
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true}'
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://gemma4:8000/v1
+    volumes:
+      - open-webui:/app/backend/data
+    restart: always
+
+volumes:
+  open-webui:
