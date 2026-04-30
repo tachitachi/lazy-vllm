@@ -9,11 +9,14 @@ services:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     deploy:
       resources:
+        limits:
+          memory: 100g
         reservations:
           devices:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    restart: always
     command:
       - --model=google/gemma-4-26B-A4B-it
       - --max-model-len=262144
