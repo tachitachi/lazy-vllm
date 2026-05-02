@@ -33,6 +33,8 @@ services:
       - --max-num-seqs=4
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"enable_thinking": true}'
+      - --mm-processor-cache-type=lru
+      - --mm-processor-cache-gb=8
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
