@@ -11,6 +11,7 @@
       "models": {
         "google/gemma-4-26B-A4B-it": {
           "name": "Gemma 4 26B",
+          "reasoning": true,
           "limit": {
             "context": 262144,
             "output": 8192
