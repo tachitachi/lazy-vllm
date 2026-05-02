@@ -122,13 +122,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.opencode
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "4096:4096"
     volumes:
       - ${WORKSPACE_PATH:-${HOME}/GitHub}:/workspace
-      - opencode_config:/root/.config/opencode
-      - ./opencode/opencode.json:/root/.config/opencode/opencode.json:ro
+      - ./opencode/data:/home/opencode
+      - ./opencode/opencode.json:/home/opencode/.config/opencode/opencode.json:ro
     environment:
+      HOME: /home/opencode
       OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
       VLLM_API_KEY: EMPTY
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -144,4 +146,3 @@ volumes:
   open-webui:
   prometheus-data:
   grafana-data:
-  opencode_config:
