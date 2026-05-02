@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "vllm/google/gemma-4-26B-A4B-it",
+  "provider": {
+    "vllm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "vLLM (local)",
+      "options": {
+        "baseURL": "http://gemma4:8000/v1"
+      },
+      "models": {
+        "google/gemma-4-26B-A4B-it": {
+          "name": "Gemma 4 26B",
+          "limit": {
+            "context": 262144,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

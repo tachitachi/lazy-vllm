@@ -1,0 +1,15 @@
+FROM oven/bun:1-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN bun install -g opencode-ai
+
+WORKDIR /workspace
+
+EXPOSE 4096
+
+CMD ["opencode", "web", "--port", "4096", "--hostname", "0.0.0.0"]

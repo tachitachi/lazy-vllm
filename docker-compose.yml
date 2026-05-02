@@ -118,7 +118,30 @@ services:
       - prometheus
     restart: always
 
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode
+    ports:
+      - "4096:4096"
+    volumes:
+      - ${WORKSPACE_PATH:-${HOME}/GitHub}:/workspace
+      - opencode_config:/root/.config/opencode
+      - ./opencode/opencode.json:/root/.config/opencode/opencode.json:ro
+    environment:
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
+      VLLM_API_KEY: EMPTY
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+    depends_on:
+      - gemma4
+    restart: unless-stopped
+
 volumes:
   open-webui:
   prometheus-data:
   grafana-data:
+  opencode_config:
