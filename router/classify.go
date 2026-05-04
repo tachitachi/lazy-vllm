@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"log/slog"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const routingPrompt = "You are a query router. Classify the user's latest message as DIRECT or REASONING.\n\n" +
@@ -23,6 +24,9 @@ const routingPrompt = "You are a query router. Classify the user's latest messag
 // output constrained to ["DIRECT", "REASONING"] via structured_outputs.choice.
 // On error it returns true (fail-open: matches vLLM server default of enable_thinking=true).
 func classify(ctx context.Context, messages []ChatMessage, cfg config, authHeader string) (bool, error) {
+	start := time.Now()
+	defer func() { classifyDurationSeconds.Observe(time.Since(start).Seconds()) }()
+
 	msgs := make([]ChatMessage, 0, len(messages)+1)
 	msgs = append(msgs, ChatMessage{Role: "system", Content: routingPrompt})
 	msgs = append(msgs, messages...)

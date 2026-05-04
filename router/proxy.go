@@ -6,9 +6,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
@@ -30,13 +33,18 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Warn("classification failed, defaulting to thinking=true", "err", err)
 		enableThinking = true
+		classifyErrorsTotal.Inc()
 	}
 
-	classification := "DIRECT"
+	classification := "direct"
 	if enableThinking {
-		classification = "REASONING"
+		classification = "reasoning"
 	}
-	slog.Info("routed request", "classification", classification, "messages", len(req.Messages))
+	slog.Debug("routed request", "classification", classification, "messages", len(req.Messages))
+	defer func() {
+		requestsTotal.WithLabelValues(classification).Inc()
+		requestDurationSeconds.WithLabelValues(classification).Observe(time.Since(start).Seconds())
+	}()
 
 	modifiedBody, err := injectThinkingMode(bodyBytes, enableThinking)
 	if err != nil {
