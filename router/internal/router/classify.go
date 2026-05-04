@@ -1,4 +1,4 @@
-package main
+package router
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ const routingPrompt = "You are a query router. Classify the user's latest messag
 // classify sends the message window to vLLM with thinking disabled and structured
 // output constrained to ["DIRECT", "REASONING"] via structured_outputs.choice.
 // On error it returns true (fail-open: matches vLLM server default of enable_thinking=true).
-func classify(ctx context.Context, messages []ChatMessage, cfg config, authHeader string) (bool, error) {
+func classify(ctx context.Context, messages []ChatMessage, cfg Config, authHeader string) (bool, error) {
 	start := time.Now()
 	defer func() { classifyDurationSeconds.Observe(time.Since(start).Seconds()) }()
 
@@ -32,10 +32,10 @@ func classify(ctx context.Context, messages []ChatMessage, cfg config, authHeade
 	msgs = append(msgs, messages...)
 
 	payload := map[string]any{
-		"model":    cfg.ModelName,
-		"messages": msgs,
-		"max_tokens": 16,
-		"stream":   false,
+		"model":                cfg.ModelName,
+		"messages":             msgs,
+		"max_tokens":           16,
+		"stream":               false,
 		"structured_outputs":   map[string]any{"choice": []string{"DIRECT", "REASONING"}},
 		"chat_template_kwargs": map[string]bool{"enable_thinking": false},
 	}

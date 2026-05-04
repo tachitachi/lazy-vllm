@@ -1,4 +1,4 @@
-package main
+package router
 
 import (
 	"encoding/json"
@@ -45,9 +45,9 @@ func vllmCompletionResponse() []byte {
 	return b
 }
 
-// testConfig returns a config pointing at the given URL with sensible test defaults.
-func testConfig(url string) config {
-	return config{VLLMBaseURL: url, ModelName: "test-model", WindowSize: 3}
+// testConfig returns a Config pointing at the given URL with sensible test defaults.
+func testConfig(url string) Config {
+	return Config{VLLMBaseURL: url, ModelName: "test-model", WindowSize: 3}
 }
 
 // dualHandler returns an HTTP handler that distinguishes classify calls from main

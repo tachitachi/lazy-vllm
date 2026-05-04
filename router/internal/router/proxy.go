@@ -1,4 +1,4 @@
-package main
+package router
 
 import (
 	"bytes"
@@ -9,7 +9,22 @@ import (
 	"time"
 )
 
-func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
+type Config struct {
+	VLLMBaseURL string
+	Port        int
+	WindowSize  int
+	ModelName   string
+}
+
+type Server struct {
+	cfg Config
+}
+
+func NewServer(cfg Config) *Server {
+	return &Server{cfg: cfg}
+}
+
+func (s *Server) HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
@@ -80,7 +95,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) handleGenericProxy(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request) {
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method,
 		s.cfg.VLLMBaseURL+r.RequestURI, r.Body)
 	if err != nil {

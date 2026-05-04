@@ -1,4 +1,4 @@
-package main
+package router
 
 import "encoding/json"
 
@@ -7,7 +7,7 @@ type ChatMessage struct {
 	Content any    `json:"content"`
 }
 
-// Minimal decode target — used only to extract messages and stream flag.
+// minimalRequest is used only to extract messages and stream flag.
 // The full request body is handled as map[string]json.RawMessage to
 // preserve all unknown fields during injection.
 type minimalRequest struct {

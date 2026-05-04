@@ -1,4 +1,4 @@
-package main
+package router
 
 import (
 	"bytes"
@@ -10,19 +10,19 @@ import (
 	"testing"
 )
 
-// --- handleChatCompletions ---
+// --- HandleChatCompletions ---
 
 func TestHandleChatCompletions_InjectsThinkingTrue_ForREASONING(t *testing.T) {
 	var capturedMain []byte
 	srv := httptest.NewServer(dualHandler("REASONING", vllmCompletionResponse(), &capturedMain))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"explain recursion"}]}`))
 	req.Header.Set("Content-Type", "application/json")
 
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	assertEnableThinking(t, capturedMain, true)
 }
@@ -32,12 +32,12 @@ func TestHandleChatCompletions_InjectsThinkingFalse_ForDIRECT(t *testing.T) {
 	srv := httptest.NewServer(dualHandler("DIRECT", vllmCompletionResponse(), &capturedMain))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Content-Type", "application/json")
 
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	assertEnableThinking(t, capturedMain, false)
 }
@@ -58,7 +58,7 @@ func TestHandleChatCompletions_MessageWindowing_TruncatesToWindow(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	msgs := []map[string]string{
 		{"role": "user", "content": "msg1"},
 		{"role": "assistant", "content": "msg2"},
@@ -69,7 +69,7 @@ func TestHandleChatCompletions_MessageWindowing_TruncatesToWindow(t *testing.T) 
 	body, _ := json.Marshal(map[string]any{"model": "test", "messages": msgs})
 	req := httptest.NewRequest("POST", "/v1/chat/completions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	var payload map[string]json.RawMessage
 	json.Unmarshal(capturedClassify, &payload)
@@ -103,11 +103,11 @@ func TestHandleChatCompletions_MessageWindowing_SendsAllWhenUnderLimit(t *testin
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"a"},{"role":"assistant","content":"b"}]}`))
 	req.Header.Set("Content-Type", "application/json")
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	var payload map[string]json.RawMessage
 	json.Unmarshal(capturedClassify, &payload)
@@ -120,10 +120,10 @@ func TestHandleChatCompletions_MessageWindowing_SendsAllWhenUnderLimit(t *testin
 }
 
 func TestHandleChatCompletions_InvalidJSON_Returns400(t *testing.T) {
-	s := &server{cfg: testConfig("http://unused")}
+	s := &Server{cfg: testConfig("http://unused")}
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader("not json"))
 	w := httptest.NewRecorder()
-	s.handleChatCompletions(w, req)
+	s.HandleChatCompletions(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -146,11 +146,11 @@ func TestHandleChatCompletions_FailOpen_WhenClassifyErrors(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("Content-Type", "application/json")
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	assertEnableThinking(t, capturedMain, true)
 }
@@ -170,12 +170,12 @@ func TestHandleChatCompletions_ForwardsAuthHeader_ToMainCall(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer my-token")
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	if capturedAuth != "Bearer my-token" {
 		t.Errorf("Authorization: got %q, want %q", capturedAuth, "Bearer my-token")
@@ -187,12 +187,12 @@ func TestHandleChatCompletions_StreamingResponse_PassedThrough(t *testing.T) {
 	srv := httptest.NewServer(dualHandler("DIRECT", []byte(streamData), nil))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	s.handleChatCompletions(w, req)
+	s.HandleChatCompletions(w, req)
 
 	if w.Body.String() != streamData {
 		t.Errorf("streaming body: got %q, want %q", w.Body.String(), streamData)
@@ -204,11 +204,11 @@ func TestHandleChatCompletions_PreservesOriginalRequestFields(t *testing.T) {
 	srv := httptest.NewServer(dualHandler("DIRECT", vllmCompletionResponse(), &capturedMain))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/chat/completions",
 		strings.NewReader(`{"model":"specific-model","messages":[{"role":"user","content":"hi"}],"temperature":0.8}`))
 	req.Header.Set("Content-Type", "application/json")
-	s.handleChatCompletions(httptest.NewRecorder(), req)
+	s.HandleChatCompletions(httptest.NewRecorder(), req)
 
 	var out map[string]json.RawMessage
 	json.Unmarshal(capturedMain, &out)
@@ -226,7 +226,7 @@ func TestHandleChatCompletions_PreservesOriginalRequestFields(t *testing.T) {
 	}
 }
 
-// --- handleGenericProxy ---
+// --- HandleGenericProxy ---
 
 func TestHandleGenericProxy_ForwardsPath(t *testing.T) {
 	var capturedPath string
@@ -236,9 +236,9 @@ func TestHandleGenericProxy_ForwardsPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("GET", "/v1/models", nil)
-	s.handleGenericProxy(httptest.NewRecorder(), req)
+	s.HandleGenericProxy(httptest.NewRecorder(), req)
 
 	if capturedPath != "/v1/models" {
 		t.Errorf("path: got %q, want /v1/models", capturedPath)
@@ -253,9 +253,9 @@ func TestHandleGenericProxy_ForwardsMethod(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/tokenize", strings.NewReader(`{"text":"hello"}`))
-	s.handleGenericProxy(httptest.NewRecorder(), req)
+	s.HandleGenericProxy(httptest.NewRecorder(), req)
 
 	if capturedMethod != "POST" {
 		t.Errorf("method: got %q, want POST", capturedMethod)
@@ -270,10 +270,10 @@ func TestHandleGenericProxy_ForwardsAuthHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	req.Header.Set("Authorization", "Bearer token")
-	s.handleGenericProxy(httptest.NewRecorder(), req)
+	s.HandleGenericProxy(httptest.NewRecorder(), req)
 
 	if capturedAuth != "Bearer token" {
 		t.Errorf("Authorization: got %q, want Bearer token", capturedAuth)
@@ -288,9 +288,9 @@ func TestHandleGenericProxy_ForwardsBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("POST", "/v1/tokenize", strings.NewReader(`{"text":"hello"}`))
-	s.handleGenericProxy(httptest.NewRecorder(), req)
+	s.HandleGenericProxy(httptest.NewRecorder(), req)
 
 	if string(capturedBody) != `{"text":"hello"}` {
 		t.Errorf("body: got %q, want %q", capturedBody, `{"text":"hello"}`)
@@ -303,10 +303,10 @@ func TestHandleGenericProxy_CopiesResponseBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &server{cfg: testConfig(srv.URL)}
+	s := &Server{cfg: testConfig(srv.URL)}
 	req := httptest.NewRequest("GET", "/v1/models", nil)
 	w := httptest.NewRecorder()
-	s.handleGenericProxy(w, req)
+	s.HandleGenericProxy(w, req)
 
 	if w.Body.String() != `{"object":"list","data":[]}` {
 		t.Errorf("response body: got %q", w.Body.String())

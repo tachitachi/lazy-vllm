@@ -12,18 +12,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"thinking-router/internal/router"
 )
-
-type config struct {
-	VLLMBaseURL string
-	Port        int
-	WindowSize  int
-	ModelName   string
-}
-
-type server struct {
-	cfg config
-}
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
@@ -42,7 +32,7 @@ func envIntOr(key string, fallback int) int {
 }
 
 func main() {
-	cfg := config{
+	cfg := router.Config{
 		VLLMBaseURL: envOr("VLLM_BASE_URL", "http://gemma4:8000"),
 		Port:        envIntOr("PORT", 8001),
 		WindowSize:  envIntOr("ROUTER_WINDOW_SIZE", 3),
@@ -56,15 +46,15 @@ func main() {
 		"model", cfg.ModelName,
 	)
 
-	s := &server{cfg: cfg}
+	s := router.NewServer(cfg)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.Handle("GET /metrics", promhttp.Handler())
-	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
-	mux.HandleFunc("/", s.handleGenericProxy)
+	mux.HandleFunc("POST /v1/chat/completions", s.HandleChatCompletions)
+	mux.HandleFunc("/", s.HandleGenericProxy)
 
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
