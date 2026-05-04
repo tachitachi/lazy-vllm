@@ -2032,6 +2032,7 @@
         }
       ],
       "title": "Routing Split",
+      "description": "Total number of requests split by classification. Shows the distribution between DIRECT and REASONING modes.",
       "type": "piechart"
     },
     {
@@ -2080,6 +2081,7 @@
         }
       ],
       "title": "Request Rate by Mode",
+      "description": "Rate of requests per second categorized by classification (DIRECT or REASONING).",
       "type": "timeseries"
     },
     {
@@ -2140,6 +2142,7 @@
         }
       ],
       "title": "Classify Latency",
+      "description": "Latency of the classification process, shown in percentiles (p50, p95, p99).",
       "type": "timeseries"
     }
   ],
