@@ -37,14 +37,31 @@ services:
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
 
+  thinking-router:
+    build:
+      context: ./router
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - VLLM_BASE_URL=http://gemma4:8000
+      - PORT=8001
+      - ROUTER_WINDOW_SIZE=3
+      - MODEL_NAME=google/gemma-4-26B-A4B-it
+    depends_on:
+      - gemma4
+    restart: always
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     ports:
       - "3000:8080"
     environment:
-      - OLLAMA_BASE_URL=http://gemma4:8000/v1
+      - OLLAMA_BASE_URL=http://thinking-router:8001/v1
     volumes:
       - open-webui:/app/backend/data
+    depends_on:
+      - thinking-router
     restart: always
 
   node-exporter:

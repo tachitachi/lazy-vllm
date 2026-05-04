@@ -6,7 +6,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "vLLM (local)",
       "options": {
-        "baseURL": "http://gemma4:8000/v1"
+        "baseURL": "http://thinking-router:8001/v1"
       },
       "models": {
         "google/gemma-4-26B-A4B-it": {
