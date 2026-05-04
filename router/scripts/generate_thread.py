@@ -35,18 +35,53 @@ def generate_question(llm_url, target_type, context=None):
     """
     Asks an LLM to generate a question that should be classified as target_type.
     """
-    if context:
-        prompt = (
-            f"You are a user in a chat. Based on the previous conversation: {context}, "
-            f"generate a follow-up question that is clearly {target_type} in nature. "
-            f"A {target_type} question is one that is {'trivial and requires no reasoning' if target_type == 'DIRECT' else 'complex and requires deep reasoning'}. "
-            "Respond ONLY with the question text and nothing else."
+    domains = (
+        "coding (debugging, algorithms, system design, APIs, performance), "
+        "software and DevOps (Docker, CI/CD, databases, networking, Linux), "
+        "mathematics and logic, science, history, language and writing, "
+        "everyday practical tasks, or casual conversation"
+    )
+
+    if target_type == "DIRECT":
+        type_description = (
+            "trivially simple — a one-fact lookup, a greeting, or a question with an immediate "
+            "obvious answer that requires zero reasoning steps (e.g. 'What does API stand for?', "
+            "'Hi there', 'What language is Django written in?')"
         )
     else:
+        type_description = (
+            "cognitively demanding — it requires multi-step reasoning, synthesis, analysis, "
+            "debugging, design trade-offs, or explanation of complex concepts "
+            "(e.g. 'Why does this Python snippet cause a RecursionError and how would you fix it?', "
+            "'Design a rate-limiter for a distributed API gateway', "
+            "'Explain the CAP theorem and when you would sacrifice consistency for availability')"
+        )
+
+    if context:
         prompt = (
-            f"Generate a user question that should be classified as {target_type} by a router. "
-            f"A {target_type} question is one that is {'trivial and requires no reasoning' if target_type == 'DIRECT' else 'complex and requires deep reasoning'}. "
-            "Respond ONLY with the question text and nothing else."
+            f"You are a curious user continuing a conversation. "
+            f"Previous conversation:\n{context}\n\n"
+            f"Generate a single natural follow-up question from the user. "
+            f"The question must be {type_description}. "
+            f"Vary the subject matter freely across domains such as {domains}. "
+            "Output ONLY the question text with no preamble, quotes, or explanation."
+        )
+    else:
+        domain_hint = random.choice([
+            "software engineering or coding",
+            "DevOps, infrastructure, or Linux",
+            "algorithms or data structures",
+            "mathematics or logic puzzles",
+            "science or technology concepts",
+            "history, language, or culture",
+            "everyday practical tasks",
+            "casual conversation or small talk",
+        ])
+        prompt = (
+            f"Generate a single user question for a chat assistant. "
+            f"The question must be {type_description}. "
+            f"Pick a topic from the domain: {domain_hint}. "
+            "Output ONLY the question text with no preamble, quotes, or explanation."
         )
 
     payload = {
@@ -71,7 +106,7 @@ def run_thread(router_url, generator_url, output_dir):
     history = []
     labels = []
 
-    num_messages = random.randint(1, 6)
+    num_messages = 6
     print(f"[thread {thread_id[:8]}] generating {num_messages} message(s)")
     current_context = None
 
