@@ -12,13 +12,15 @@ import (
 	"time"
 )
 
-const routingPrompt = "You are a query router. Classify the user's latest message as DIRECT or REASONING.\n\n" +
-	"DIRECT: Only the simplest possible requests — greetings, basic small talk, or trivially " +
-	"obvious one-fact answers (e.g. 'Hi', 'What color is the sky?').\n\n" +
-	"REASONING: Everything else — explanations, analysis, coding, math, comparisons, " +
-	"multi-step tasks, writing, summaries, advice, debugging, or any question where " +
-	"thinking step-by-step would improve the answer.\n\n" +
-	"When in doubt, choose REASONING."
+const routingPrompt = "You are a query router. Classify the user's latest message as DIRECT or REASONING based on the cognitive depth required to provide an accurate response.\n\n" +
+	"DIRECT: Use for shallow-processing tasks. This includes simple factual retrieval, greetings, or trivial transformations where the answer is immediate and requires no internal logical steps, synthesis of information, or complex reasoning.\n\n" +
+	"REASONING: Use for deep-processing tasks. This includes queries that require:\n" +
+	"- Multi-step logical deduction or sequential processing.\n" +
+	"- Synthesis or abstraction (e.g., summarizing, identifying themes, or distilling information).\n" +
+	"- Analytical reasoning (e.g., comparisons, critiques, or explaining 'why').\n" +
+	"- Complex constraint satisfaction (e.g., following intricate formatting or stylistic rules).\n" +
+	"- Processing high-density or structurally complex input.\n\n" +
+	"Classify the message based on the required depth of processing."
 
 // classify sends the message window to vLLM with thinking disabled and structured
 // output constrained to ["DIRECT", "REASONING"] via structured_outputs.choice.
