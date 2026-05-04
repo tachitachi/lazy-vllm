@@ -39,6 +39,13 @@ func main() {
 		ModelName:   envOr("MODEL_NAME", "google/gemma-4-26B-A4B-it"),
 	}
 
+	levelVar := &slog.LevelVar{}
+	levelVar.Set(slog.LevelInfo)
+
+	// Use TextHandler for better readability in console
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: levelVar})
+	slog.SetDefault(slog.New(handler))
+
 	slog.Info("starting thinking-router",
 		"vllm_base_url", cfg.VLLMBaseURL,
 		"port", cfg.Port,
@@ -46,7 +53,7 @@ func main() {
 		"model", cfg.ModelName,
 	)
 
-	s := router.NewServer(cfg)
+	s := router.NewServer(cfg, levelVar)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +61,7 @@ func main() {
 	})
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /v1/chat/completions", s.HandleChatCompletions)
+	mux.HandleFunc("POST /log-level", s.HandleLogLevel)
 	mux.HandleFunc("/", s.HandleGenericProxy)
 
 	httpServer := &http.Server{

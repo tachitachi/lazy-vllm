@@ -17,11 +17,44 @@ type Config struct {
 }
 
 type Server struct {
-	cfg Config
+	cfg    Config
+	levelVar *slog.LevelVar
 }
 
-func NewServer(cfg Config) *Server {
-	return &Server{cfg: cfg}
+func NewServer(cfg Config, levelVar *slog.LevelVar) *Server {
+	return &Server{
+		cfg:      cfg,
+		levelVar: levelVar,
+	}
+}
+
+func (s *Server) HandleLogLevel(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Level string `json:"level"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	var level slog.Level
+	switch req.Level {
+	case "DEBUG":
+		level = slog.LevelDebug
+	case "INFO":
+		level = slog.LevelInfo
+	case "WARN":
+		level = slog.LevelWarn
+	case "ERROR":
+		level = slog.LevelError
+	default:
+		http.Error(w, "invalid log level", http.StatusBadRequest)
+		return
+	}
+
+	s.levelVar.Set(level)
+	slog.Info("log level changed", "new_level", level.String())
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +89,7 @@ func (s *Server) HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		classification = "reasoning"
 	}
 	slog.Debug("routed request", "classification", classification, "messages", len(req.Messages))
+	slog.Debug("request message", "message", req.Messages)
 	defer func() {
 		requestsTotal.WithLabelValues(classification).Inc()
 		requestDurationSeconds.WithLabelValues(classification).Observe(time.Since(start).Seconds())
