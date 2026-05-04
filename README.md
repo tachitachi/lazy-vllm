@@ -1,0 +1,79 @@
+# Lazy-vLLM: Intelligent Reasoning Orchestration for Gemma 4
+
+Lazy-vLLM is a high-performance orchestration environment designed to maximize the efficiency of reasoning-capable LLMs, specifically the **Gemma 4** family. By integrating an intelligent "Thinking Router" between the user interface and the inference engine, it optimizes the trade-off between latency and cognitive depth.
+
+## 🚀 Overview
+
+The core philosophy of Lazy-vLLM is to avoid using expensive reasoning capabilities for trivial tasks. The system intelligently classifies queries and dynamically enables or disables the model's "thinking" mode (chain-of-thought) based on the complexity of the request.
+
+### Architecture Components
+
+- **Thinking-Router (Go)**: An intelligent proxy that classifies incoming requests as `DIRECT` or `REASONING`. It dynamically injects `chat_template_kwargs` to control the model's reasoning behavior.
+- **vLLM (Gemma 4 Engine)**: The high-throughput inference backend running `google/gemma-4-26B-A4B-it`.
+- **Open-WebUI**: A feature-rich, user-friendly web interface for interacting with the LLM.
+- **Opencode**: A specialized service for executing tasks within a controlled workspace environment.
+- **Observability Stack**: 
+    - **Prometheus**: Collects metrics from the router and system hardware.
+    - **Grafana**: Provides real-time visualization of performance and resource utilization.
+    - **Exporters**: Includes `nvidia-gpu-exporter`, `node-exporter`, and `cadvisor` for deep hardware insights.
+
+## 🛠️ Getting Started
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/)
+- [Docker Compose](https://docs.docker.com/compose/install/)
+- NVIDIA GPU with compatible drivers
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+### Deployment
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd lazy-vllm
+   ```
+
+2. Configure your environment variables (e.g., API keys for external providers if used):
+   ```bash
+   export OPENCODE_SERVER_PASSWORD=your_password
+   # Add other keys as needed (ANTHROPIC_API_KEY, etc.)
+   ```
+
+3. Launch the stack:
+   ```bash
+   docker compose up -d
+   ```
+
+### Accessing the Services
+
+- **Web Interface**: [http://localhost:3000](http://localhost:3000) (Open-WebUI)
+- **Thinking Router API**: [http://localhost:8001](http://localhost:8001)
+- **Grafana Dashboards**: [http://localhost:3001](http://localhost:3001)
+- **Prometheus Metrics**: [http://localhost:9090](http://localhost:9090)
+
+## 🧠 How Routing Works
+
+The `thinking-router` uses a small, fast classification pass to analyze the user's intent:
+
+- **DIRECT**: Used for greetings, simple facts, or transformations. The router disables "thinking" to ensure minimal latency.
+- **REASONING**: Used for logic, synthesis, or complex constraints. The router enables "thinking" to leverage the model's full cognitive capacity.
+
+## 📊 Monitoring
+
+The included Grafana dashboards allow you to monitor:
+- **Router Performance**: Classification latency, request throughput, and error rates.
+- **Model Performance**: Token generation speed and vLLM utilization.
+- **Hardware Health**: GPU temperature, memory utilization, and system-wide resource consumption.
+
+## 📂 Project Structure
+
+```text
+.
+├── docker-compose.yml         # Main orchestration file
+├── Dockerfile.opencode        # Opencode service build definition
+├── opencode/                 # Opencode service implementation
+├── prometheus/               # Prometheus configuration
+├── grafana/                  # Grafana provisioning and dashboards
+└── router/                   # Thinking-Router (Go implementation)
+```
