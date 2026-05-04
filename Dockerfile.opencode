@@ -9,8 +9,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV BUN_INSTALL=/usr/local
 RUN bun install -g opencode-ai
 
+ARG GO_VERSION=1.26.1
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -xz -C /usr/local
+ENV PATH=/usr/local/go/bin:$PATH
+
 WORKDIR /workspace
 
 EXPOSE 4096
 
-CMD ["/bin/sh", "-c", "cd /workspace && exec opencode web --port 4096 --hostname 0.0.0.0"]
+CMD ["opencode", "web", "--port", "4096", "--hostname", "0.0.0.0"]

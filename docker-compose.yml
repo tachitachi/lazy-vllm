@@ -1,12 +1,13 @@
 services:
   gemma4:
-    image: vllm/vllm-openai:gemma4-cu130
+    image: vllm/vllm-openai:latest
     ports:
       - "8000:8000"
     ipc: host
     shm_size: '16g'
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4c55b528bdc40b4e79ed7fd4e2f8e46fa5aaed5a/chat_template.jinja:/vllm-workspace/examples/tool_chat_template_gemma4.jinja
     deploy:
       resources:
         reservations:
