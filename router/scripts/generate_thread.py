@@ -44,9 +44,11 @@ def generate_question(llm_url, target_type, context=None):
 
     if target_type == "DIRECT":
         type_description = (
-            "trivially simple — a one-fact lookup, a greeting, or a question with an immediate "
-            "obvious answer that requires zero reasoning steps (e.g. 'What does API stand for?', "
-            "'Hi there', 'What language is Django written in?')"
+            "direct and factual — a concise question that can be answered with a single fact, "
+            "a command, a definition, or a short instruction without requiring multi-step "
+            "reasoning (e.g., 'How do I check open ports in Linux?', 'What is the syntax for a "
+            "Python decorator?', 'What does the git command git stash do?'). Avoid overly trivial "
+            "trivia like 'What is the capital of France?' or 'What is 2+2?'."
         )
     else:
         type_description = (
@@ -64,6 +66,8 @@ def generate_question(llm_url, target_type, context=None):
             f"Generate a single natural follow-up question from the user. "
             f"The question must be {type_description}. "
             f"Vary the subject matter freely across domains such as {domains}. "
+            "Ensure the question is unique, avoids common clichés, and is highly relevant to the specified domain and logically follows the previous answer. "
+            "Do not repeat common easy questions. "
             "Output ONLY the question text with no preamble, quotes, or explanation."
         )
     else:
@@ -81,6 +85,8 @@ def generate_question(llm_url, target_type, context=None):
             f"Generate a single user question for a chat assistant. "
             f"The question must be {type_description}. "
             f"Pick a topic from the domain: {domain_hint}. "
+            "Ensure the question is unique, avoids common clichés, and is highly relevant to the specified domain and logically follows the previous answer. "
+            "Do not repeat common easy questions. "
             "Output ONLY the question text with no preamble, quotes, or explanation."
         )
 
