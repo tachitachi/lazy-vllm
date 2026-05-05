@@ -74,7 +74,6 @@ def analyze_error(
     payload = {
         "model": "google/gemma-4-26B-A4B-it",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.0,
         "chat_template_kwargs": {"enable_thinking": False},
     }
 
