@@ -1,3 +1,4 @@
 .env
 .claude/settings.local.json
 opencode/data/
+router/data/synthetic/
