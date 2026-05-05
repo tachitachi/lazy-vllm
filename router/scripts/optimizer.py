@@ -38,21 +38,20 @@ def optimize_prompt(llm_url: str, report_path: str, current_prompt: str) -> str:
     payload = {
         "model": "google/gemma-4-26B-A4B-it",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": {"enable_thinking": True},
     }
 
     try:
         response = requests.post(llm_url, json=payload)
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"].strip()
-        
+
         # Clean up markdown if present
         if content.startswith("```json"):
             content = content.split("```json")[1].split("```")[0].strip()
         elif content.startswith("```"):
             content = content.split("```")[1].split("```")[0].strip()
-            
+
         data = json.loads(content)
         return data["new_prompt"]
     except Exception as e:
@@ -64,8 +63,8 @@ if __name__ == "__main__":
     parser.add_argument("--report", type=str, required=True, help="Path to the evaluation report (Markdown)")
     parser.add_argument("--current-prompt", type=str, required=True, help="The current system prompt")
     parser.add_argument("--generator-url", type=str, required=True, help="LLM endpoint for optimization")
-    
+
     args = parser.parse_args()
-    
+
     new_prompt = optimize_prompt(args.generator_url, args.report, args.current_prompt)
     print(new_prompt)

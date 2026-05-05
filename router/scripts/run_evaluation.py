@@ -6,13 +6,14 @@ import argparse
 import requests
 import concurrent.futures
 from datetime import datetime
-from typing import List
+from typing import List, Tuple, Optional
 
 from evaluator import (
     EvaluationResult,
     EvaluationRun,
     compare_labels,
     analyze_error,
+    calculate_weighted_score,
     generate_optimizer_report
 )
 
@@ -89,7 +90,6 @@ def evaluate_thread(filename: str) -> List[EvaluationResult]:
         )
 
         if not match:
-            # Use GENERATOR_URL for the analyst LLM as it's a separate task
             error_info = analyze_error(GENERATOR_URL, user_query, expected_label, router_output)
             result.error_category = error_info.get("category")
             result.error_reason = error_info.get("reason")
@@ -98,16 +98,18 @@ def evaluate_thread(filename: str) -> List[EvaluationResult]:
 
     return thread_results
 
-def run_evaluation(num_files: int, workers: int):
+def run_evaluation(num_files: int = 0, workers: int = 1) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Runs evaluation and returns a tuple of (results_file_path, report_file_path).
+    """
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
 
     files = [f for f in os.listdir(SYNTHETIC_DATA_DIR) if f.endswith('.json')]
     if not files:
         print(f"No synthetic data found in {SYNTHETIC_DATA_DIR}")
-        return
+        return None, None
 
-    # Limit to N files if specified
     if num_files > 0:
         files = files[:num_files]
 
@@ -125,7 +127,6 @@ def run_evaluation(num_files: int, workers: int):
             except Exception as e:
                 print(f"Thread {filename} generated an exception: {e}")
 
-    # 2. Create EvaluationRun
     evaluation_run = EvaluationRun(
         timestamp=datetime.now().isoformat(),
         prompt_version=PROMPT_VERSION,
@@ -133,13 +134,11 @@ def run_evaluation(num_files: int, workers: int):
         results=all_run_results
     )
 
-    # 3. Save results
     run_id = str(uuid.uuid4())[:8]
     results_file = os.path.join(OUTPUT_DIR, f"results_{run_id}.json")
     with open(results_file, 'w') as f:
         json.dump(evaluation_run.to_dict(), f, indent=2)
 
-    # 4. Generate Report
     report = generate_optimizer_report(all_run_results)
     report_file = os.path.join(OUTPUT_DIR, f"report_{run_id}.md")
     with open(report_file, 'w') as f:
@@ -151,11 +150,17 @@ def run_evaluation(num_files: int, workers: int):
     print(f"Report:  {report_file}")
     print("="*30)
 
+    return results_file, report_file
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run router evaluation on synthetic data.")
     parser.add_argument("--n", type=int, default=0, help="Number of files to evaluate (0 for all)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
     args = parser.parse_args()
 
-    run_evaluation(args.n, args.workers)
+    res_path, rep_path = run_evaluation(args.n, args.workers)
+    if res_path:
+        print(res_path)
+        print(rep_path)
+
 
