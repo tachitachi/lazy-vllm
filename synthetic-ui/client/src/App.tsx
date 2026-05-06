@@ -23,6 +23,20 @@ function App() {
     }
   };
 
+  const handleApprove = async (id: string) => {
+    if (window.confirm('Are you sure you want to approve this thread? This will move the file to the approved directory.')) {
+      try {
+        await api.approveThread(id);
+        setSelectedThreadId(null);
+        alert('Thread approved successfully');
+        window.location.reload();
+      } catch (err) {
+        console.error(err);
+        alert('Failed to approve thread');
+      }
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 overflow-hidden">
       {/* Sidebar */}
@@ -40,6 +54,7 @@ function App() {
           <ChatView
             threadId={selectedThreadId}
             onArchive={() => handleArchive(selectedThreadId)}
+            onApprove={() => handleApprove(selectedThreadId)}
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">

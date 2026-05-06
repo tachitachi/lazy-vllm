@@ -8,9 +8,10 @@ import remarkGfm from 'remark-gfm';
 interface ChatViewProps {
   threadId: string;
   onArchive: () => void;
+  onApprove: () => void;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ threadId, onArchive }) => {
+const ChatView: React.FC<ChatViewProps> = ({ threadId, onArchive, onApprove }) => {
   const [thread, setThread] = useState<Thread | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<number | null>(null);
@@ -82,6 +83,13 @@ const ChatView: React.FC<ChatViewProps> = ({ threadId, onArchive }) => {
           </h2>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={onApprove}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
+          >
+            <Check size={16} />
+            Approve
+          </button>
           <button
             onClick={onArchive}
             className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"

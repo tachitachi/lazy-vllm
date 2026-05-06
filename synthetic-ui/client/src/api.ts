@@ -28,4 +28,7 @@ export const api = {
   archiveThread: async (id: string): Promise<void> => {
     await axios.post(`${API_BASE_URL}/threads/${id}/archive`);
   },
+  approveThread: async (id: string): Promise<void> => {
+    await axios.post(`${API_BASE_URL}/threads/${id}/approve`);
+  },
 };
