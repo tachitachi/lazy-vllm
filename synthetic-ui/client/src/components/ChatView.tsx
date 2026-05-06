@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import type { Thread, Message } from '../api';
 import { Loader2, Archive, Check, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatViewProps {
   threadId: string;
@@ -125,13 +127,19 @@ const ChatView: React.FC<ChatViewProps> = ({ threadId, onArchive }) => {
               </div>
 
               <div
-                className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed overflow-hidden ${
                   isAssistant
-                    ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tl-none'
+                    ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100 rounded-tl-none prose dark:prose-invert prose-sm max-w-none'
                     : 'bg-blue-600 text-white rounded-tr-none'
                 }`}
               >
-                {msg.content}
+                {isAssistant ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                )}
               </div>
             </div>
           );
