@@ -3,22 +3,34 @@ import ThreadList from './components/ThreadList';
 import ChatView from './components/ChatView';
 import { api } from './api';
 import { AlertCircle } from 'lucide-react';
+import Toast from './components/Toast';
+import type { ToastType } from './components/Toast';
 
 function App() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [loadingThread, setLoadingThread] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<{ id: number; message: string; type: ToastType }[]>([]);
+
+  const addToast = (message: string, type: ToastType) => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+  };
+
+  const removeToast = (id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
 
   const handleArchive = async (id: string) => {
     if (window.confirm('Are you sure you want to archive this thread? This will move the file to the archive directory.')) {
       try {
         await api.archiveThread(id);
         setSelectedThreadId(null);
-        alert('Thread archived successfully');
+        addToast('Thread archived successfully', 'success');
         window.location.reload();
       } catch (err) {
         console.error(err);
-        alert('Failed to archive thread');
+        addToast('Failed to archive thread', 'error');
       }
     }
   };
@@ -28,17 +40,30 @@ function App() {
       try {
         await api.approveThread(id);
         setSelectedThreadId(null);
-        alert('Thread approved successfully');
+        addToast('Thread approved successfully', 'success');
         window.location.reload();
       } catch (err) {
         console.error(err);
-        alert('Failed to approve thread');
+        addToast('Failed to approve thread', 'error');
       }
     }
   };
 
   return (
     <div className="flex h-screen w-full bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 overflow-hidden">
+      {/* Toasts Container */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 w-full max-w-md pointer-events-none">
+        {toasts.map((toast) => (
+          <div key={toast.id} className="pointer-events-auto w-full">
+            <Toast
+              message={toast.message}
+              type={toast.type}
+              onClose={() => removeToast(toast.id)}
+            />
+          </div>
+        ))}
+      </div>
+
       {/* Sidebar */}
       <div className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 h-full">
         <ThreadList

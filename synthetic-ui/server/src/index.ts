@@ -62,10 +62,10 @@ app.post('/api/threads/:id/label', async (req: Request, res: Response) => {
     const filePath = path.join(SYNTHETIC_DIR, req.params.id);
     const thread: Thread = await fs.readJson(filePath);
 
-    // Basic validation: ensure labels length matches history length (or at least doesn't exceed it)
-    // The user's data seems to have one label per message.
-    if (labels.length !== thread.labels.length) {
-      return res.status(400).send('Labels length must match history length');
+    // Basic validation: ensure labels length matches the number of user-assistant pairs
+    const expectedLabelsCount = Math.ceil(thread.history.length / 2);
+    if (labels.length !== expectedLabelsCount) {
+      return res.status(400).send(`Labels length must be ${expectedLabelsCount} (one per user-assistant pair)`);
     }
 
     thread.labels = labels;

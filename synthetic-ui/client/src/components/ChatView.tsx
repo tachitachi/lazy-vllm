@@ -104,7 +104,7 @@ const ChatView: React.FC<ChatViewProps> = ({ threadId, onArchive, onApprove }) =
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {thread.history.map((msg, idx) => {
           const isAssistant = msg.role === 'assistant';
-          const label = isAssistant ? thread.labels[idx] : null;
+          const label = isAssistant ? thread.labels[Math.floor(idx / 2)] : null;
 
           return (
             <div
@@ -123,7 +123,7 @@ const ChatView: React.FC<ChatViewProps> = ({ threadId, onArchive, onApprove }) =
                       {label}
                     </span>
                     <button
-                      onClick={() => handleLabelToggle(idx)}
+                      onClick={() => handleLabelToggle(Math.floor(idx / 2))}
                       disabled={updating === idx}
                       className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
                       title="Toggle Label"
