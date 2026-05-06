@@ -61,6 +61,7 @@ func main() {
 	})
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /v1/chat/completions", s.HandleChatCompletions)
+	mux.HandleFunc("POST /v1/messages", s.HandleMessages)
 	mux.HandleFunc("POST /log-level", s.HandleLogLevel)
 	mux.HandleFunc("/", s.HandleGenericProxy)
 

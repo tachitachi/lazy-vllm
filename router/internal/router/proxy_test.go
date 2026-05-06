@@ -226,6 +226,179 @@ func TestHandleChatCompletions_PreservesOriginalRequestFields(t *testing.T) {
 	}
 }
 
+// --- HandleMessages ---
+
+func TestHandleMessages_InjectsThinkingTrue_ForREASONING(t *testing.T) {
+	var capturedMain []byte
+	srv := httptest.NewServer(dualHandler("REASONING", vllmCompletionResponse(), &capturedMain))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"explain recursion"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	s.HandleMessages(httptest.NewRecorder(), req)
+
+	assertEnableThinking(t, capturedMain, true)
+}
+
+func TestHandleMessages_InjectsThinkingFalse_ForDIRECT(t *testing.T) {
+	var capturedMain []byte
+	srv := httptest.NewServer(dualHandler("DIRECT", vllmCompletionResponse(), &capturedMain))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	s.HandleMessages(httptest.NewRecorder(), req)
+
+	assertEnableThinking(t, capturedMain, false)
+}
+
+func TestHandleMessages_InvalidJSON_Returns400(t *testing.T) {
+	s := &Server{cfg: testConfig("http://unused")}
+	req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader("not json"))
+	w := httptest.NewRecorder()
+	s.HandleMessages(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleMessages_FailOpen_WhenClassifyErrors(t *testing.T) {
+	var capturedMain []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var top map[string]json.RawMessage
+		json.Unmarshal(body, &top)
+		if _, isClassify := top["structured_outputs"]; isClassify {
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			capturedMain = body
+			w.Write(vllmCompletionResponse())
+		}
+	}))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	s.HandleMessages(httptest.NewRecorder(), req)
+
+	assertEnableThinking(t, capturedMain, true)
+}
+
+func TestHandleMessages_ForwardsXApiKey(t *testing.T) {
+	var capturedKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var top map[string]json.RawMessage
+		json.Unmarshal(body, &top)
+		if _, isClassify := top["structured_outputs"]; isClassify {
+			w.Write(vllmClassifyResponse("DIRECT"))
+		} else {
+			capturedKey = r.Header.Get("x-api-key")
+			w.Write(vllmCompletionResponse())
+		}
+	}))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("x-api-key", "sk-ant-test")
+	s.HandleMessages(httptest.NewRecorder(), req)
+
+	if capturedKey != "sk-ant-test" {
+		t.Errorf("x-api-key: got %q, want sk-ant-test", capturedKey)
+	}
+}
+
+func TestHandleMessages_ForwardsAnthropicHeaders(t *testing.T) {
+	capturedHeaders := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var top map[string]json.RawMessage
+		json.Unmarshal(body, &top)
+		if _, isClassify := top["structured_outputs"]; isClassify {
+			w.Write(vllmClassifyResponse("DIRECT"))
+		} else {
+			capturedHeaders["anthropic-version"] = r.Header.Get("anthropic-version")
+			capturedHeaders["anthropic-beta"] = r.Header.Get("anthropic-beta")
+			w.Write(vllmCompletionResponse())
+		}
+	}))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", "interleaved-thinking-2025-05-14")
+	s.HandleMessages(httptest.NewRecorder(), req)
+
+	if capturedHeaders["anthropic-version"] != "2023-06-01" {
+		t.Errorf("anthropic-version: got %q", capturedHeaders["anthropic-version"])
+	}
+	if capturedHeaders["anthropic-beta"] != "interleaved-thinking-2025-05-14" {
+		t.Errorf("anthropic-beta: got %q", capturedHeaders["anthropic-beta"])
+	}
+}
+
+func TestHandleMessages_StreamingResponse_PassedThrough(t *testing.T) {
+	streamData := "event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+	srv := httptest.NewServer(dualHandler("DIRECT", []byte(streamData), nil))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"model":"test","messages":[{"role":"user","content":"hi"}],"stream":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.HandleMessages(w, req)
+
+	if w.Body.String() != streamData {
+		t.Errorf("streaming body: got %q, want %q", w.Body.String(), streamData)
+	}
+}
+
+func TestHandleMessages_SystemFieldIncludedInClassify(t *testing.T) {
+	var capturedClassify []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var top map[string]json.RawMessage
+		json.Unmarshal(body, &top)
+		if _, isClassify := top["structured_outputs"]; isClassify {
+			capturedClassify = body
+			w.Write(vllmClassifyResponse("DIRECT"))
+		} else {
+			w.Write(vllmCompletionResponse())
+		}
+	}))
+	defer srv.Close()
+
+	s := &Server{cfg: testConfig(srv.URL)}
+	req := httptest.NewRequest("POST", "/v1/messages",
+		strings.NewReader(`{"system":"be helpful","model":"test","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	s.HandleMessages(httptest.NewRecorder(), req)
+
+	var payload map[string]json.RawMessage
+	json.Unmarshal(capturedClassify, &payload)
+	var classifyMsgs []ChatMessage
+	json.Unmarshal(payload["messages"], &classifyMsgs)
+
+	// system prompt (from router) + system (from request) + user message = 3
+	if len(classifyMsgs) < 2 {
+		t.Fatalf("classify got %d messages, want at least 2 (system + user)", len(classifyMsgs))
+	}
+}
+
 // --- HandleGenericProxy ---
 
 func TestHandleGenericProxy_ForwardsPath(t *testing.T) {

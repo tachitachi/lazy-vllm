@@ -1,6 +1,9 @@
 package router
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 type ChatMessage struct {
 	Role    string `json:"role"`
@@ -21,6 +24,55 @@ type chatChoice struct {
 
 type chatResponse struct {
 	Choices []chatChoice `json:"choices"`
+}
+
+type AnthropicContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type AnthropicMessage struct {
+	Role    string `json:"role"`
+	Content any    `json:"content"` // string or []AnthropicContentBlock
+}
+
+type minimalAnthropicRequest struct {
+	System   any               `json:"system"` // string or []AnthropicContentBlock
+	Messages []AnthropicMessage `json:"messages"`
+	Stream   bool              `json:"stream"`
+}
+
+// anthropicMessagesToChat converts an Anthropic Messages request into the
+// []ChatMessage slice that classify() expects (OpenAI format, text-only).
+func anthropicMessagesToChat(system any, messages []AnthropicMessage) []ChatMessage {
+	var result []ChatMessage
+	if s := extractText(system); s != "" {
+		result = append(result, ChatMessage{Role: "system", Content: s})
+	}
+	for _, m := range messages {
+		result = append(result, ChatMessage{Role: m.Role, Content: extractText(m.Content)})
+	}
+	return result
+}
+
+// extractText returns plain text from a JSON-decoded value that is either a
+// string or a slice of Anthropic content blocks.
+func extractText(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case []any:
+		var parts []string
+		for _, item := range val {
+			if m, ok := item.(map[string]any); ok {
+				if t, ok := m["text"].(string); ok {
+					parts = append(parts, t)
+				}
+			}
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
 }
 
 // injectThinkingMode adds chat_template_kwargs: {"enable_thinking": <enable>}

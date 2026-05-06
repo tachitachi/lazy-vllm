@@ -129,6 +129,87 @@ func (s *Server) HandleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req minimalAnthropicRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	all := anthropicMessagesToChat(req.System, req.Messages)
+	window := all
+	if len(window) > s.cfg.WindowSize {
+		window = window[len(window)-s.cfg.WindowSize:]
+	}
+
+	// Anthropic clients send x-api-key; fall back to Authorization for compatibility.
+	authHeader := r.Header.Get("x-api-key")
+	if authHeader == "" {
+		authHeader = r.Header.Get("Authorization")
+	}
+
+	enableThinking, err := classify(r.Context(), window, s.cfg, authHeader)
+	if err != nil {
+		slog.Warn("classification failed, defaulting to thinking=true", "err", err)
+		enableThinking = true
+		classifyErrorsTotal.Inc()
+	}
+
+	classification := "direct"
+	if enableThinking {
+		classification = "reasoning"
+	}
+	slog.Debug("routed request", "classification", classification, "messages", len(req.Messages))
+	slog.Debug("request message", "message", req.Messages)
+	defer func() {
+		requestsTotal.WithLabelValues(classification).Inc()
+		requestDurationSeconds.WithLabelValues(classification).Observe(time.Since(start).Seconds())
+	}()
+
+	modifiedBody, err := injectThinkingMode(bodyBytes, enableThinking)
+	if err != nil {
+		http.Error(w, "failed to modify request", http.StatusInternalServerError)
+		return
+	}
+
+	upstream, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
+		s.cfg.VLLMBaseURL+"/v1/messages", bytes.NewReader(modifiedBody))
+	if err != nil {
+		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
+		return
+	}
+	upstream.Header.Set("Content-Type", "application/json")
+	for _, h := range []string{"x-api-key", "anthropic-version", "anthropic-beta", "Authorization"} {
+		if v := r.Header.Get(h); v != "" {
+			upstream.Header.Set(h, v)
+		}
+	}
+
+	resp, err := http.DefaultClient.Do(upstream)
+	if err != nil {
+		http.Error(w, "upstream request failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	copyResponseHeaders(w, resp)
+	w.WriteHeader(resp.StatusCode)
+
+	if req.Stream {
+		proxyStream(w, resp.Body)
+	} else {
+		io.Copy(w, resp.Body)
+	}
+}
+
 func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request) {
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method,
 		s.cfg.VLLMBaseURL+r.RequestURI, r.Body)
