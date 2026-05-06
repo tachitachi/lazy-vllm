@@ -8,7 +8,11 @@ The core philosophy of Lazy-vLLM is to avoid using expensive reasoning capabilit
 
 ### Architecture Components
 
-- **Thinking-Router (Go)**: An intelligent proxy that classifies incoming requests as `DIRECT` or `REASONING`. It dynamically injects `chat_template_kwargs` to control the model's reasoning behavior.
+- **Thinking-Router (Go)**: An intelligent proxy that:
+    - Classifies incoming requests as `DIRECT` or `REASONING`.
+    - Dynamically injects `chat_template_kwargs` to control the model's reasoning behavior.
+    - Supports the Anthropic Messages API format.
+    - Optimizes reasoning turns by stripping prior `thinking` and `redacted_thinking` blocks from message history, ensuring compatibility with vLLM's requirement to preserve only the most recent thinking context.
 - **vLLM (Gemma 4 Engine)**: The high-throughput inference backend running `google/gemma-4-26B-A4B-it`.
 - **Open-WebUI**: A feature-rich, user-friendly web interface for interacting with the LLM.
 - **Opencode**: A specialized service for executing tasks within a controlled workspace environment.
