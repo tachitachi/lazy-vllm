@@ -11,6 +11,7 @@ function App() {
   const [loadingThread, setLoadingThread] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: number; message: string; type: ToastType }[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const addToast = (message: string, type: ToastType) => {
     const id = Date.now();
@@ -27,7 +28,7 @@ function App() {
         await api.archiveThread(id);
         setSelectedThreadId(null);
         addToast('Thread archived successfully', 'success');
-        window.location.reload();
+        setRefreshKey((prev) => prev + 1);
       } catch (err) {
         console.error(err);
         addToast('Failed to archive thread', 'error');
@@ -36,16 +37,14 @@ function App() {
   };
 
   const handleApprove = async (id: string) => {
-    if (window.confirm('Are you sure you want to approve this thread? This will move the file to the approved directory.')) {
-      try {
-        await api.approveThread(id);
-        setSelectedThreadId(null);
-        addToast('Thread approved successfully', 'success');
-        window.location.reload();
-      } catch (err) {
-        console.error(err);
-        addToast('Failed to approve thread', 'error');
-      }
+    try {
+      await api.approveThread(id);
+      setSelectedThreadId(null);
+      addToast('Thread approved successfully', 'success');
+      setRefreshKey((prev) => prev + 1);
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to approve thread', 'error');
     }
   };
 
@@ -70,6 +69,7 @@ function App() {
           onSelectThread={setSelectedThreadId}
           selectedThreadId={selectedThreadId}
           isLoading={loadingThread}
+          refreshKey={refreshKey}
         />
       </div>
 

@@ -6,9 +6,10 @@ interface ThreadListProps {
   onSelectThread: (id: string) => void;
   selectedThreadId: string | null;
   isLoading: boolean;
+  refreshKey?: number;
 }
 
-const ThreadList: React.FC<ThreadListProps> = ({ onSelectThread, selectedThreadId, isLoading }) => {
+const ThreadList: React.FC<ThreadListProps> = ({ onSelectThread, selectedThreadId, isLoading, refreshKey }) => {
   const [threads, setThreads] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -23,7 +24,7 @@ const ThreadList: React.FC<ThreadListProps> = ({ onSelectThread, selectedThreadI
       }
     };
     fetchThreads();
-  }, []);
+  }, [refreshKey]);
 
   if (isLoading) {
     return (
