@@ -168,17 +168,25 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		classification = "reasoning"
 	}
 	slog.Debug("routed request", "classification", classification, "messages", len(req.Messages))
-	slog.Debug("request message", "message", req.Messages)
+	// slog.Debug("request message", "message", req.Messages)
 	defer func() {
 		requestsTotal.WithLabelValues(classification).Inc()
 		requestDurationSeconds.WithLabelValues(classification).Observe(time.Since(start).Seconds())
 	}()
 
-	modifiedBody, err := injectThinkingMode(bodyBytes, enableThinking)
+	strippedBody, err := stripPriorThinkingBlocks(bodyBytes)
+	if err != nil {
+		http.Error(w, "failed to strip thinking blocks", http.StatusInternalServerError)
+		return
+	}
+
+	modifiedBody, err := injectThinkingMode(strippedBody, enableThinking)
 	if err != nil {
 		http.Error(w, "failed to modify request", http.StatusInternalServerError)
 		return
 	}
+
+	slog.Debug("modified body", "message", modifiedBody)
 
 	upstream, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
 		s.cfg.VLLMBaseURL+"/v1/messages", bytes.NewReader(modifiedBody))

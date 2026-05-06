@@ -116,6 +116,167 @@ func TestAnthropicMessagesToChat_RoundtripFromJSON(t *testing.T) {
 	}
 }
 
+// --- stripPriorThinkingBlocks ---
+
+func TestStripPriorThinkingBlocks_StripsAllButLastAssistant(t *testing.T) {
+	body := `{"messages":[
+		{"role":"user","content":"q1"},
+		{"role":"assistant","content":[{"type":"thinking","thinking":"t1"},{"type":"text","text":"a1"}]},
+		{"role":"user","content":"q2"},
+		{"role":"assistant","content":[{"type":"thinking","thinking":"t2"},{"type":"text","text":"a2"}]}
+	]}`
+	result, err := stripPriorThinkingBlocks([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	json.Unmarshal(result, &top)
+	var msgs []json.RawMessage
+	json.Unmarshal(top["messages"], &msgs)
+
+	// First assistant message (index 1) should have thinking stripped.
+	var first struct {
+		Content []struct{ Type string `json:"type"` } `json:"content"`
+	}
+	json.Unmarshal(msgs[1], &first)
+	for _, b := range first.Content {
+		if b.Type == "thinking" {
+			t.Error("first assistant message still has a thinking block")
+		}
+	}
+
+	// Last assistant message (index 3) should keep its thinking block.
+	var last struct {
+		Content []struct{ Type string `json:"type"` } `json:"content"`
+	}
+	json.Unmarshal(msgs[3], &last)
+	hasThinking := false
+	for _, b := range last.Content {
+		if b.Type == "thinking" {
+			hasThinking = true
+		}
+	}
+	if !hasThinking {
+		t.Error("last assistant message had its thinking block removed")
+	}
+}
+
+func TestStripPriorThinkingBlocks_RedactedThinkingStripped(t *testing.T) {
+	body := `{"messages":[
+		{"role":"assistant","content":[{"type":"redacted_thinking","data":"x"},{"type":"text","text":"hi"}]},
+		{"role":"user","content":"follow up"},
+		{"role":"assistant","content":[{"type":"text","text":"final"}]}
+	]}`
+	result, err := stripPriorThinkingBlocks([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	json.Unmarshal(result, &top)
+	var msgs []json.RawMessage
+	json.Unmarshal(top["messages"], &msgs)
+
+	var first struct {
+		Content []struct{ Type string `json:"type"` } `json:"content"`
+	}
+	json.Unmarshal(msgs[0], &first)
+	for _, b := range first.Content {
+		if b.Type == "redacted_thinking" {
+			t.Error("redacted_thinking block not stripped from prior assistant message")
+		}
+	}
+}
+
+func TestStripPriorThinkingBlocks_SingleAssistant_Preserved(t *testing.T) {
+	body := `{"messages":[
+		{"role":"user","content":"hello"},
+		{"role":"assistant","content":[{"type":"thinking","thinking":"deep"},{"type":"text","text":"hi"}]}
+	]}`
+	result, err := stripPriorThinkingBlocks([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	json.Unmarshal(result, &top)
+	var msgs []json.RawMessage
+	json.Unmarshal(top["messages"], &msgs)
+
+	var asst struct {
+		Content []struct{ Type string `json:"type"` } `json:"content"`
+	}
+	json.Unmarshal(msgs[1], &asst)
+	hasThinking := false
+	for _, b := range asst.Content {
+		if b.Type == "thinking" {
+			hasThinking = true
+		}
+	}
+	if !hasThinking {
+		t.Error("only assistant message had thinking block removed; it should be preserved")
+	}
+}
+
+func TestStripPriorThinkingBlocks_NoThinkingBlocks_BodyUnchangedStructurally(t *testing.T) {
+	body := `{"messages":[
+		{"role":"user","content":"hi"},
+		{"role":"assistant","content":[{"type":"text","text":"hello"}]}
+	]}`
+	result, err := stripPriorThinkingBlocks([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both message counts and content block counts should be the same.
+	var top map[string]json.RawMessage
+	json.Unmarshal(result, &top)
+	var msgs []json.RawMessage
+	json.Unmarshal(top["messages"], &msgs)
+	if len(msgs) != 2 {
+		t.Errorf("messages len: got %d, want 2", len(msgs))
+	}
+}
+
+func TestStripPriorThinkingBlocks_StringContentUntouched(t *testing.T) {
+	body := `{"messages":[
+		{"role":"assistant","content":"plain string"},
+		{"role":"user","content":"follow up"},
+		{"role":"assistant","content":"final"}
+	]}`
+	result, err := stripPriorThinkingBlocks([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	json.Unmarshal(result, &top)
+	var msgs []json.RawMessage
+	json.Unmarshal(top["messages"], &msgs)
+	var first struct {
+		Content string `json:"content"`
+	}
+	json.Unmarshal(msgs[0], &first)
+	if first.Content != "plain string" {
+		t.Errorf("string content was modified: got %q", first.Content)
+	}
+}
+
+func TestStripPriorThinkingBlocks_OtherFieldsPreserved(t *testing.T) {
+	body := `{"model":"claude-3","system":"helpful","messages":[
+		{"role":"user","content":"hi"},
+		{"role":"assistant","content":[{"type":"text","text":"hello"}]}
+	]}`
+	result, err := stripPriorThinkingBlocks([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var top map[string]json.RawMessage
+	json.Unmarshal(result, &top)
+	if _, ok := top["model"]; !ok {
+		t.Error("model field was dropped")
+	}
+	if _, ok := top["system"]; !ok {
+		t.Error("system field was dropped")
+	}
+}
+
 func TestInjectThinkingMode(t *testing.T) {
 	t.Run("sets enable_thinking true", func(t *testing.T) {
 		result, err := injectThinkingMode([]byte(`{"model":"test","messages":[]}`), true)

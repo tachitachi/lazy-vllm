@@ -75,6 +75,82 @@ func extractText(v any) string {
 	return ""
 }
 
+// stripPriorThinkingBlocks removes thinking and redacted_thinking content blocks
+// from every assistant message except the last one. The last assistant message's
+// thinking blocks are preserved because vLLM requires them to be present when
+// continuing a reasoning turn.
+func stripPriorThinkingBlocks(body []byte) ([]byte, error) {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		return nil, err
+	}
+	rawMsgs, ok := top["messages"]
+	if !ok {
+		return body, nil
+	}
+	var msgs []json.RawMessage
+	if err := json.Unmarshal(rawMsgs, &msgs); err != nil {
+		return nil, err
+	}
+
+	lastAssistantIdx := -1
+	for i, raw := range msgs {
+		var m struct {
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(raw, &m) == nil && m.Role == "assistant" {
+			lastAssistantIdx = i
+		}
+	}
+
+	for i, raw := range msgs {
+		var m struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		}
+		if json.Unmarshal(raw, &m) != nil || m.Role != "assistant" || i == lastAssistantIdx {
+			continue
+		}
+		var blocks []json.RawMessage
+		if json.Unmarshal(m.Content, &blocks) != nil {
+			continue // string content — nothing to strip
+		}
+		filtered := make([]json.RawMessage, 0, len(blocks))
+		for _, block := range blocks {
+			var b struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(block, &b) != nil || (b.Type != "thinking" && b.Type != "redacted_thinking") {
+				filtered = append(filtered, block)
+			}
+		}
+		if len(filtered) == len(blocks) {
+			continue
+		}
+		var fullMsg map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fullMsg); err != nil {
+			return nil, err
+		}
+		newContent, err := json.Marshal(filtered)
+		if err != nil {
+			return nil, err
+		}
+		fullMsg["content"] = newContent
+		newMsg, err := json.Marshal(fullMsg)
+		if err != nil {
+			return nil, err
+		}
+		msgs[i] = newMsg
+	}
+
+	newMsgs, err := json.Marshal(msgs)
+	if err != nil {
+		return nil, err
+	}
+	top["messages"] = newMsgs
+	return json.Marshal(top)
+}
+
 // injectThinkingMode adds chat_template_kwargs: {"enable_thinking": <enable>}
 // at the top level of the request JSON, preserving all other fields.
 func injectThinkingMode(body []byte, enable bool) ([]byte, error) {
