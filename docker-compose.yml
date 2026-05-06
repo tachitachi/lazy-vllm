@@ -1,6 +1,6 @@
 services:
   gemma4:
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:gemma4-0505-cu130
     ports:
       - "8000:8000"
     ipc: host
@@ -18,6 +18,9 @@ services:
     restart: always
     command:
       - --model=google/gemma-4-26B-A4B-it
+      - --served-model-name
+      - google/gemma-4-26B-A4B-it
+      - gemma-4-26B-A4B-it
       - --max-model-len=262144
       - --gpu-memory-utilization=0.50
       - --quantization=fp8
@@ -34,6 +37,7 @@ services:
       - --max-num-seqs=256
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"enable_thinking": true}'
+      - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 4}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
 
