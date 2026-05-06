@@ -3,9 +3,12 @@ import os
 import subprocess
 import time
 from datetime import datetime
+import json
+import re
 
 from evaluator import EvaluationRun
 from run_evaluation import run_evaluation
+from optimizer import optimize_prompt
 
 # Configuration
 GENERATOR_URL = "http://localhost:8000/v1/chat/completions"
@@ -27,13 +30,6 @@ INITIAL_PROMPT = (
     "Classify the message based on the required depth of processing."
 )
 
-def run_command(command: list):
-    """Runs a command and returns the output, or raises an error."""
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise Exception(f"Command failed: {' '.join(command)}\nError: {result.stderr}")
-    return result.stdout
-
 def optimize_loop(target_score: float, max_iterations: int, workers: int):
     current_prompt = INITIAL_PROMPT
     iteration = 0
@@ -54,7 +50,7 @@ def optimize_loop(target_score: float, max_iterations: int, workers: int):
 
         # 1. Run Evaluation
         print("Step 1: Running evaluation...")
-        results_file, report_file = run_evaluation(num_files=0, workers=workers)
+        results_file, report_file = run_evaluation(num_files=0, workers=workers, system_prompt=current_prompt)
 
         if not results_file or not report_file:
             print("Error: Evaluation failed to produce files.")
@@ -64,8 +60,7 @@ def optimize_loop(target_score: float, max_iterations: int, workers: int):
         with open(results_file, 'r') as f:
             run_data = json.load(f)
 
-        # Extract score from report using regex (since run_evaluation doesn't return it directly)
-        import re
+        # Extract score from report using regex
         with open(report_file, 'r') as f:
             report_content = f.read()
 
@@ -84,12 +79,7 @@ def optimize_loop(target_score: float, max_iterations: int, workers: int):
 
         # 4. Run Optimization
         print("Step 2: Optimizing prompt...")
-        new_prompt = run_command([
-            "python3", "scripts/optimizer.py",
-            "--report", report_file,
-            "--current-prompt", current_prompt,
-            "--generator-url", GENERATOR_URL
-        ]).strip()
+        new_prompt = optimize_prompt(GENERATOR_URL, report_file, current_prompt)
 
         if not new_prompt:
             print("Optimizer failed to return a new prompt.")
@@ -109,7 +99,6 @@ def optimize_loop(target_score: float, max_iterations: int, workers: int):
     print(f"\nOptimization Finished. Final iteration: {iteration}")
 
 if __name__ == "__main__":
-    import json # Needed for parsing run_data
     parser = argparse.ArgumentParser(description="Automated Prompt Optimization Loop.")
     parser.add_argument("--target-score", type=float, default=5.0, help="Target weighted score to reach")
     parser.add_argument("--max-iters", type=int, default=5, help="Maximum number of optimization iterations")
@@ -117,4 +106,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     optimize_loop(args.target_score, args.max_iters, args.workers)
+
 

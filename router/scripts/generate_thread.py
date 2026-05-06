@@ -93,7 +93,6 @@ def generate_question(llm_url, target_type, context=None):
     payload = {
         "model": "google/gemma-4-26B-A4B-it",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.8,
         "chat_template_kwargs": {"enable_thinking": False},
     }
 

@@ -24,8 +24,8 @@ OUTPUT_DIR = "data/eval_results"
 MODEL_NAME = "google/gemma-4-26B-A4B-it"
 PROMPT_VERSION = "v1-baseline"
 
-# The prompt used by the actual router in classify.go
-ROUTER_SYSTEM_PROMPT = (
+# Default prompt for CLI usage
+DEFAULT_ROUTER_SYSTEM_PROMPT = (
     "You are a query router. Classify the user's latest message as DIRECT or REASONING based on the cognitive depth required to provide an accurate response.\n\n"
     "DIRECT: Use for shallow-processing tasks. This includes simple factual retrieval, greetings, or trivial transformations where the answer is immediate and requires no internal logical steps, synthesis of information, or complex reasoning.\n\n"
     "REASONING: Use for deep-processing tasks. This includes queries that require:\n"
@@ -37,7 +37,7 @@ ROUTER_SYSTEM_PROMPT = (
     "Classify the message based on the required depth of processing."
 )
 
-def evaluate_thread(filename: str) -> List[EvaluationResult]:
+def evaluate_thread(filename: str, system_prompt: str) -> List[EvaluationResult]:
     """
     Evaluates a single thread and returns a list of results for its turns.
     """
@@ -58,7 +58,7 @@ def evaluate_thread(filename: str) -> List[EvaluationResult]:
 
         # Prepare messages for the router: [System Prompt, ...last 3 messages]
         context_window = history[max(0, user_idx-2) : user_idx+1]
-        router_messages = [{"role": "system", "content": ROUTER_SYSTEM_PROMPT}] + context_window
+        router_messages = [{"role": "system", "content": system_prompt}] + context_window
 
         payload = {
             "model": MODEL_NAME,
@@ -98,7 +98,7 @@ def evaluate_thread(filename: str) -> List[EvaluationResult]:
 
     return thread_results
 
-def run_evaluation(num_files: int = 0, workers: int = 1) -> Tuple[Optional[str], Optional[str]]:
+def run_evaluation(num_files: int = 0, workers: int = 1, system_prompt: str = DEFAULT_ROUTER_SYSTEM_PROMPT) -> Tuple[Optional[str], Optional[str]]:
     """
     Runs evaluation and returns a tuple of (results_file_path, report_file_path).
     """
@@ -118,7 +118,7 @@ def run_evaluation(num_files: int = 0, workers: int = 1) -> Tuple[Optional[str],
     all_run_results = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        future_to_file = {executor.submit(evaluate_thread, f): f for f in files}
+        future_to_file = {executor.submit(evaluate_thread, f, system_prompt): f for f in files}
         for future in concurrent.futures.as_completed(future_to_file):
             filename = future_to_file[future]
             try:
@@ -156,11 +156,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run router evaluation on synthetic data.")
     parser.add_argument("--n", type=int, default=0, help="Number of files to evaluate (0 for all)")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers")
+    parser.add_argument("--prompt", type=str, default=DEFAULT_ROUTER_SYSTEM_PROMPT, help="The system prompt to use for evaluation")
     args = parser.parse_args()
 
-    res_path, rep_path = run_evaluation(args.n, args.workers)
+    res_path, rep_path = run_evaluation(args.n, args.workers, args.prompt)
     if res_path:
         print(res_path)
         print(rep_path)
+
 
 
