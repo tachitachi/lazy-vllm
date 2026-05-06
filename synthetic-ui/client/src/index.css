@@ -1,0 +1,7 @@
+@theme {
+  --color-accent: #aa3bff;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
