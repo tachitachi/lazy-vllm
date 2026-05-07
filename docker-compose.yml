@@ -56,6 +56,21 @@ services:
       - gemma4
     restart: always
 
+  agent-graph:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - VLLM_BASE_URL=http://gemma4:8000
+      - PORT=8002
+      - ROUTER_WINDOW_SIZE=3
+      - MODEL_NAME=google/gemma-4-26B-A4B-it
+    depends_on:
+      - gemma4
+    restart: always
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     ports:
