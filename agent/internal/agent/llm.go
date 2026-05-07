@@ -11,6 +11,7 @@ import (
 
 type modelResponse struct {
 	Content   string     // final text content
+	Reasoning string     // thinking content from reasoning_content field
 	ToolCalls []ToolCall // non-empty means the model wants to call tools
 }
 
@@ -70,7 +71,9 @@ func callModel(ctx context.Context, cfg Config, ag Agent, pctx *PipelineCtx, msg
 		return nil, fmt.Errorf("callModel request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if auth := pctx.OriginalHeaders.Get("Authorization"); auth != "" {
+	if key := pctx.OriginalHeaders.Get("x-api-key"); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	} else if auth := pctx.OriginalHeaders.Get("Authorization"); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
 
@@ -91,8 +94,9 @@ func callModel(ctx context.Context, cfg Config, ag Agent, pctx *PipelineCtx, msg
 	var result struct {
 		Choices []struct {
 			Message struct {
-				Content   any        `json:"content"`
-				ToolCalls []ToolCall `json:"tool_calls"`
+				Content          any        `json:"content"`
+				ReasoningContent string     `json:"reasoning"`
+				ToolCalls        []ToolCall `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
 	}
@@ -108,6 +112,7 @@ func callModel(ctx context.Context, cfg Config, ag Agent, pctx *PipelineCtx, msg
 
 	return &modelResponse{
 		Content:   content,
+		Reasoning: choice.ReasoningContent,
 		ToolCalls: choice.ToolCalls,
 	}, nil
 }

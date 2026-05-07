@@ -109,9 +109,10 @@ func (g *Graph) runChain(ctx context.Context, node *Node, pctx *PipelineCtx) (st
 		if len(resp.ToolCalls) > 0 {
 			// Tool call turn: preserve thinking in workingMessages (Gemma4 rule 2).
 			assistantMsg := ChatMessage{
-				Role:      "assistant",
-				Content:   resp.Content,
-				ToolCalls: resp.ToolCalls,
+				Role:             "assistant",
+				Content:          resp.Content,
+				ReasoningContent: resp.Reasoning,
+				ToolCalls:        resp.ToolCalls,
 			}
 			workingMessages = append(workingMessages, assistantMsg)
 
@@ -134,11 +135,12 @@ func (g *Graph) runChain(ctx context.Context, node *Node, pctx *PipelineCtx) (st
 
 		// Final turn: commit to pctx.Messages.
 		finalMsg := ChatMessage{
-			Role:    "assistant",
-			Content: resp.Content,
+			Role:             "assistant",
+			Content:          resp.Content,
+			ReasoningContent: resp.Reasoning,
 		}
 		if node.Agent.History.StripThinkingOnCommit {
-			finalMsg = stripMessageThinking(finalMsg)
+			finalMsg = StripMessageThinking(finalMsg)
 		}
 		pctx.Messages = append(pctx.Messages, finalMsg)
 
@@ -199,20 +201,37 @@ func (g *Graph) runScatter(ctx context.Context, node *Node, pctx *PipelineCtx) e
 // runRespond rebuilds the request from pctx state and proxies it to vLLM,
 // streaming the response back to the client.
 func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w http.ResponseWriter) error {
-	body, err := g.rebuildRequestBody(pctx)
-	if err != nil {
-		http.Error(w, "failed to rebuild request", http.StatusInternalServerError)
-		return fmt.Errorf("respond: rebuild: %w", err)
+	var body []byte
+	var endpoint string
+	var passthroughHeaders []string
+
+	if pctx.Format == FormatAnthropic {
+		var err error
+		body, err = BuildAnthropicRequestBody(pctx.OriginalBody, pctx.Messages, pctx)
+		if err != nil {
+			http.Error(w, "failed to rebuild request", http.StatusInternalServerError)
+			return fmt.Errorf("respond: rebuild anthropic: %w", err)
+		}
+		endpoint = g.Cfg.VLLMBaseURL + "/v1/messages"
+		passthroughHeaders = []string{"x-api-key", "anthropic-version", "anthropic-beta", "Authorization"}
+	} else {
+		var err error
+		body, err = g.rebuildRequestBody(pctx)
+		if err != nil {
+			http.Error(w, "failed to rebuild request", http.StatusInternalServerError)
+			return fmt.Errorf("respond: rebuild openai: %w", err)
+		}
+		endpoint = g.Cfg.VLLMBaseURL + "/v1/chat/completions"
+		passthroughHeaders = []string{"Authorization", "x-api-key"}
 	}
 
-	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		g.Cfg.VLLMBaseURL+"/v1/chat/completions", bytes.NewReader(body))
+	upstream, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 		return fmt.Errorf("respond: build request: %w", err)
 	}
 	upstream.Header.Set("Content-Type", "application/json")
-	for _, h := range []string{"Authorization", "x-api-key"} {
+	for _, h := range passthroughHeaders {
 		if v := pctx.OriginalHeaders.Get(h); v != "" {
 			upstream.Header.Set(h, v)
 		}

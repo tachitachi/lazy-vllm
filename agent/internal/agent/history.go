@@ -3,33 +3,28 @@ package agent
 import (
 	"encoding/json"
 	"net/http"
-	"regexp"
-	"strings"
 )
 
-var thinkTagRe = regexp.MustCompile(`(?s)<think>.*?</think>`)
-
-// stripAllThinking removes thinking content from a slice of messages.
+// StripAllThinking removes thinking content from a slice of messages.
 // It handles two formats:
 //   - Gemma4 text format: <think>...</think> tags within string content
 //   - Anthropic block format: content blocks with type "thinking" or "redacted_thinking"
 //
 // Returns a new slice; the input is not modified.
-func stripAllThinking(msgs []ChatMessage) []ChatMessage {
+func StripAllThinking(msgs []ChatMessage) []ChatMessage {
 	out := make([]ChatMessage, len(msgs))
 	for i, m := range msgs {
-		out[i] = stripMessageThinking(m)
+		out[i] = StripMessageThinking(m)
 	}
 	return out
 }
 
-func stripMessageThinking(m ChatMessage) ChatMessage {
+func StripMessageThinking(m ChatMessage) ChatMessage {
 	result := m
+	result.ReasoningContent = "" // vLLM OpenAI format thinking field
 	switch v := m.Content.(type) {
 	case string:
-		stripped := thinkTagRe.ReplaceAllString(v, "")
-		stripped = strings.TrimSpace(stripped)
-		result.Content = stripped
+		_ = v // no <think> tags in vLLM OpenAI responses; nothing to strip from content
 	case []any:
 		filtered := make([]any, 0, len(v))
 		for _, item := range v {
@@ -47,6 +42,15 @@ func stripMessageThinking(m ChatMessage) ChatMessage {
 		result.Content = filtered
 	case []ContentBlock:
 		filtered := make([]ContentBlock, 0, len(v))
+		for _, b := range v {
+			if b.Type == "thinking" || b.Type == "redacted_thinking" {
+				continue
+			}
+			filtered = append(filtered, b)
+		}
+		result.Content = filtered
+	case []AnthropicContentBlock:
+		filtered := make([]AnthropicContentBlock, 0, len(v))
 		for _, b := range v {
 			if b.Type == "thinking" || b.Type == "redacted_thinking" {
 				continue
@@ -93,6 +97,7 @@ func applyWindow(msgs []ChatMessage, n int) []ChatMessage {
 func (p *PipelineCtx) DeepCopy() *PipelineCtx {
 	c := &PipelineCtx{
 		Stream:        p.Stream,
+		Format:        p.Format,
 		ModelOverride: p.ModelOverride,
 	}
 

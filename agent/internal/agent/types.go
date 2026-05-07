@@ -75,10 +75,18 @@ type Graph struct {
 	Cfg     Config
 }
 
+type APIFormat int
+
+const (
+	FormatOpenAI    APIFormat = iota
+	FormatAnthropic
+)
+
 type PipelineCtx struct {
 	OriginalBody    []byte
 	OriginalHeaders http.Header
 	Stream          bool
+	Format          APIFormat // FormatOpenAI or FormatAnthropic
 
 	Messages    []ChatMessage     // cross-turn history; thinking stripped from all prior turns
 	NodeOutputs map[string]string // captured outputs keyed by node ID
@@ -88,11 +96,12 @@ type PipelineCtx struct {
 }
 
 type ChatMessage struct {
-	Role       string          `json:"role"`
-	Content    any             `json:"content"`              // string or []ContentBlock
-	ToolCalls  []ToolCall      `json:"tool_calls,omitempty"`
-	ToolCallID string          `json:"tool_call_id,omitempty"`
-	Name       string          `json:"name,omitempty"`
+	Role             string     `json:"role"`
+	Content          any        `json:"content"`                    // string or []ContentBlock
+	ReasoningContent string     `json:"reasoning,omitempty"` // vLLM OpenAI format thinking
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	Name             string     `json:"name,omitempty"`
 }
 
 type ContentBlock struct {

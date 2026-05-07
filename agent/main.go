@@ -108,7 +108,41 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		OriginalBody:    bodyBytes,
 		OriginalHeaders: r.Header.Clone(),
 		Stream:          req.Stream,
-		Messages:        req.Messages,
+		Format:          agent.FormatOpenAI,
+		Messages:        agent.StripAllThinking(req.Messages),
+		NodeOutputs:     make(map[string]string),
+	}
+
+	if err := s.graph.Run(r.Context(), pctx, w); err != nil {
+		slog.Error("graph execution failed", "err", err)
+	}
+}
+
+func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		System   any                      `json:"system"`
+		Messages []agent.AnthropicMessage `json:"messages"`
+		Stream   bool                     `json:"stream"`
+	}
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	msgs := agent.AnthropicToChatMessages(req.System, req.Messages)
+
+	pctx := &agent.PipelineCtx{
+		OriginalBody:    bodyBytes,
+		OriginalHeaders: r.Header.Clone(),
+		Stream:          req.Stream,
+		Format:          agent.FormatAnthropic,
+		Messages:        agent.StripAllThinking(msgs),
 		NodeOutputs:     make(map[string]string),
 	}
 
@@ -199,6 +233,7 @@ func main() {
 	})
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
+	mux.HandleFunc("POST /v1/messages", s.handleMessages)
 	mux.HandleFunc("POST /log-level", s.handleLogLevel)
 	mux.HandleFunc("/", s.handleGenericProxy)
 
