@@ -1,6 +1,6 @@
 # Lazy-vLLM: Intelligent Reasoning Orchestration for Gemma 4
 
-Lazy-vLLM is a high-performance orchestration environment designed to maximize the efficiency of reasoning-capable LLMs, specifically the **Gemma 4** family. By integrating an intelligent "Thinking Router" between the user interface and the inference engine, it optimizes the trade-off between latency and cognitive depth.
+Lazy-vLLM is a high-performance orchestration environment designed to maximize the efficiency of reasoning-capable LLMs, specifically the **Gemma 4** family. It provides two complementary components: a lightweight **Thinking Router** for simple classify-and-proxy workflows, and a general-purpose **Agent Graph Framework** for building multi-step agentic pipelines.
 
 ## 🚀 Overview
 
@@ -8,11 +8,12 @@ The core philosophy of Lazy-vLLM is to avoid using expensive reasoning capabilit
 
 ### Architecture Components
 
-- **Thinking-Router (Go)**: An intelligent proxy that:
+- **Thinking-Router (Go)**: A lightweight proxy that:
     - Classifies incoming requests as `DIRECT` or `REASONING`.
     - Dynamically injects `chat_template_kwargs` to control the model's reasoning behavior.
-    - Supports the Anthropic Messages API format.
-    - Optimizes reasoning turns by stripping prior `thinking` and `redacted_thinking` blocks from message history, ensuring compatibility with vLLM's requirement to preserve only the most recent thinking context.
+    - Supports both OpenAI `/v1/chat/completions` and Anthropic `/v1/messages` API formats.
+    - Strips prior thinking blocks from message history per Gemma 4's multi-turn requirements.
+- **Agent Graph Framework (Go)**: A general-purpose agent execution engine (see [Agent Graph Framework](#-agent-graph-framework) below).
 - **vLLM (Gemma 4 Engine)**: The high-throughput inference backend running `google/gemma-4-26B-A4B-it`.
 - **Open-WebUI**: A feature-rich, user-friendly web interface for interacting with the LLM.
 - **Opencode**: A specialized service for executing tasks within a controlled workspace environment.
@@ -53,8 +54,186 @@ The core philosophy of Lazy-vLLM is to avoid using expensive reasoning capabilit
 
 - **Web Interface**: [http://localhost:3000](http://localhost:3000) (Open-WebUI)
 - **Thinking Router API**: [http://localhost:8001](http://localhost:8001)
+- **Agent Graph API**: [http://localhost:8002](http://localhost:8002)
 - **Grafana Dashboards**: [http://localhost:3001](http://localhost:3001)
 - **Prometheus Metrics**: [http://localhost:9090](http://localhost:9090)
+
+## 🤖 Agent Graph Framework
+
+The `agent/` module is a code-defined agent execution engine built around four concepts:
+
+| Primitive | Purpose |
+|-----------|---------|
+| **Agent** | A model identity — system prompt, model name, parameters, tools, and history policy |
+| **Node** | An agent with a role: `Route` (classify), `Chain` (tool loop), `Scatter` (parallel fan-out), or `Respond` (stream back to client) |
+| **Edge** | A conditional transition between nodes with an optional transform applied to shared state |
+| **PipelineCtx** | The shared mutable state flowing through the graph — message history, node outputs, overrides |
+
+Both `POST /v1/chat/completions` (OpenAI) and `POST /v1/messages` (Anthropic) are supported. The graph runs internally in OpenAI format; format translation happens only at the boundaries.
+
+### Gemma 4 Thinking Rules
+
+The framework enforces Gemma 4's thinking-strip requirements automatically:
+
+- **Cross-turn**: `pctx.Messages` always holds stripped history — thinking is never present across turn boundaries.
+- **Tool loop exception**: Within a `Chain` node's tool loop, `reasoning` content is preserved in the node's internal `workingMessages` so the model can reference its own reasoning when processing tool results.
+- **On commit**: When a `Chain` node finishes its loop, set `HistoryPolicy.StripThinkingOnCommit = true` to zero out `reasoning` before writing the final response to `pctx.Messages`.
+
+### Examples
+
+#### 1. Classify → Respond (mirrors the Thinking Router)
+
+The default graph shipped with `agent/main.go`. A `Route` node classifies the request; an edge transform sets `ThinkingMode`; a `Respond` node proxies to vLLM and streams back.
+
+```go
+graph := &agent.Graph{
+    Entry: "classify",
+    Cfg:   cfg,
+    Nodes: map[string]*agent.Node{
+        "classify": {
+            ID:   "classify",
+            Kind: agent.NodeKindRoute,
+            Agent: agent.Agent{
+                SystemPrompt:     routingPrompt,
+                MaxTokens:        16,
+                ThinkingMode:     boolPtr(false),
+                StructuredChoice: []string{"DIRECT", "REASONING"},
+            },
+        },
+        "respond": {ID: "respond", Kind: agent.NodeKindRespond},
+    },
+    Edges: []agent.Edge{
+        {
+            From: "classify",
+            To:   "respond",
+            Transform: func(pctx *agent.PipelineCtx) {
+                thinking := pctx.NodeOutputs["classify"] == "REASONING"
+                pctx.ThinkingMode = &thinking
+            },
+        },
+    },
+}
+```
+
+#### 2. Tool-using Chain agent
+
+A `Chain` node runs a tool loop until the model stops calling tools, then commits the final response to `pctx.Messages` with thinking stripped. A `Respond` node streams the result.
+
+```go
+webSearchTool := agent.ToolDef{
+    Name:        "web_search",
+    Description: "Search the web for current information.",
+    Parameters:  json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
+    Handler: func(ctx context.Context, input json.RawMessage) (string, error) {
+        var args struct{ Query string `json:"query"` }
+        json.Unmarshal(input, &args)
+        return search(args.Query) // your implementation
+    },
+}
+
+graph := &agent.Graph{
+    Entry: "research",
+    Cfg:   cfg,
+    Nodes: map[string]*agent.Node{
+        "research": {
+            ID:   "research",
+            Kind: agent.NodeKindChain,
+            Agent: agent.Agent{
+                SystemPrompt: "You are a research assistant. Use tools to answer the question.",
+                Tools:        []agent.ToolDef{webSearchTool},
+                History:      agent.HistoryPolicy{StripThinkingOnCommit: true},
+            },
+        },
+        "respond": {ID: "respond", Kind: agent.NodeKindRespond},
+    },
+    Edges: []agent.Edge{
+        {From: "research", To: "respond"},
+    },
+}
+```
+
+#### 3. Scatter-gather (parallel sub-agents)
+
+An orchestrator `Chain` node outputs a JSON list of tasks. A `Scatter` node fans out — one branch per task, each running an independent sub-graph. A `Merge` function folds the results back into `pctx.Messages`. A final `Chain` node synthesizes the results.
+
+```go
+graph := &agent.Graph{
+    Entry: "orchestrate",
+    Cfg:   cfg,
+    Nodes: map[string]*agent.Node{
+        "orchestrate": {
+            ID:   "orchestrate",
+            Kind: agent.NodeKindChain,
+            Agent: agent.Agent{
+                SystemPrompt: `Decompose the user's request into independent research tasks.
+Output a JSON array of task strings, e.g. ["task 1", "task 2"].`,
+                History: agent.HistoryPolicy{StripThinkingOnCommit: true},
+            },
+        },
+        "explore":    {ID: "explore", Kind: agent.NodeKindScatter},
+        "synthesize": {
+            ID:   "synthesize",
+            Kind: agent.NodeKindChain,
+            Agent: agent.Agent{
+                SystemPrompt: "Synthesize the research results into a comprehensive answer.",
+                History:      agent.HistoryPolicy{StripThinkingOnCommit: true},
+            },
+        },
+        "respond": {ID: "respond", Kind: agent.NodeKindRespond},
+    },
+    Scatter: map[string]agent.ScatterConfig{
+        "explore": {
+            BranchFactory: func(pctx *agent.PipelineCtx) []agent.Branch {
+                var tasks []string
+                json.Unmarshal([]byte(pctx.NodeOutputs["orchestrate"]), &tasks)
+
+                branches := make([]agent.Branch, len(tasks))
+                for i, task := range tasks {
+                    b := pctx.DeepCopy()
+                    b.Messages = append(b.Messages, agent.ChatMessage{
+                        Role: "user", Content: "Research task: " + task,
+                    })
+                    branches[i] = agent.Branch{Ctx: b, SubGraph: exploreSubGraph}
+                }
+                return branches
+            },
+            Merge: func(parent *agent.PipelineCtx, branches []*agent.PipelineCtx) {
+                var results []string
+                for _, b := range branches {
+                    results = append(results, b.NodeOutputs["explore_worker"])
+                }
+                parent.Messages = append(parent.Messages, agent.ChatMessage{
+                    Role:    "user",
+                    Content: "Research results:\n" + strings.Join(results, "\n---\n"),
+                })
+            },
+        },
+    },
+    Edges: []agent.Edge{
+        {From: "orchestrate", To: "explore"},
+        {From: "explore", To: "synthesize"},
+        {From: "synthesize", To: "respond"},
+    },
+}
+```
+
+### Project Structure
+
+```text
+agent/
+├── DESIGN.md                  # Full architecture and design rationale
+├── Dockerfile
+├── go.mod
+├── main.go                    # HTTP server + default classify→respond graph
+└── internal/agent/
+    ├── types.go               # Agent, Node, Edge, Graph, PipelineCtx, Branch
+    ├── executor.go            # Graph.Run, node runners (Route/Chain/Scatter/Respond)
+    ├── llm.go                 # vLLM HTTP client
+    ├── history.go             # StripAllThinking, applyWindow, DeepCopy
+    ├── anthropic.go           # Anthropic ↔ internal format conversion
+    ├── stream.go              # HTTP streaming helpers
+    └── metrics.go             # Prometheus metrics
+```
 
 ## 🧪 Synthetic UI (Data Labeling Tool)
 
@@ -129,8 +308,9 @@ The included Grafana dashboards allow you to monitor:
 .
 ├── docker-compose.yml         # Main orchestration file
 ├── Dockerfile.opencode        # Opencode service build definition
-├── opencode/                 # Opencode service implementation
-├── prometheus/               # Prometheus configuration
-├── grafana/                  # Grafana provisioning and dashboards
-└── router/                   # Thinking-Router (Go implementation)
+├── opencode/                  # Opencode service implementation
+├── prometheus/                # Prometheus configuration
+├── grafana/                   # Grafana provisioning and dashboards
+├── router/                    # Thinking-Router (Go, port 8001)
+└── agent/                     # Agent Graph Framework (Go, port 8002)
 ```
