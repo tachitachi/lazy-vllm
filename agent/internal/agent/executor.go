@@ -390,9 +390,10 @@ func (s *streamLogger) accumAnthropicChunk(data []byte) {
 	var event struct {
 		Type  string `json:"type"`
 		Delta struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Thinking string `json:"thinking"`
+			Type        string `json:"type"`
+			Text        string `json:"text"`
+			Thinking    string `json:"thinking"`
+			PartialJSON string `json:"partial_json"`
 		} `json:"delta"`
 		ContentBlock struct {
 			Type string `json:"type"`
@@ -420,11 +421,10 @@ func (s *streamLogger) accumAnthropicChunk(data []byte) {
 		case "thinking_delta":
 			s.accumReasoning.WriteString(event.Delta.Thinking)
 		case "input_json_delta":
-			// append to the last tool call's arguments
 			idx := len(s.accumTools) - 1
 			if idx >= 0 {
 				if tc, ok := s.accumTools[idx]; ok {
-					tc.Function.Arguments += event.Delta.Text
+					tc.Function.Arguments += event.Delta.PartialJSON
 				}
 			}
 		}
@@ -483,24 +483,41 @@ func parseOpenAINonStreamResponse(body []byte) *modelResponse {
 func parseAnthropicNonStreamResponse(body []byte) *modelResponse {
 	var result struct {
 		Content []struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Thinking string `json:"thinking"`
+			Type     string          `json:"type"`
+			Text     string          `json:"text"`
+			Thinking string          `json:"thinking"`
+			ID       string          `json:"id"`
+			Name     string          `json:"name"`
+			Input    json.RawMessage `json:"input"`
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil
 	}
 	var content, reasoning string
+	var toolCalls []ToolCall
 	for _, block := range result.Content {
 		switch block.Type {
 		case "text":
 			content += block.Text
 		case "thinking":
 			reasoning += block.Thinking
+		case "tool_use":
+			args := "{}"
+			if len(block.Input) > 0 {
+				args = string(block.Input)
+			}
+			toolCalls = append(toolCalls, ToolCall{
+				ID:   block.ID,
+				Type: "function",
+				Function: ToolFunction{
+					Name:      block.Name,
+					Arguments: args,
+				},
+			})
 		}
 	}
-	return &modelResponse{Content: content, Reasoning: reasoning}
+	return &modelResponse{Content: content, Reasoning: reasoning, ToolCalls: toolCalls}
 }
 
 func (s *streamLogger) logOpenAIChunk(data []byte) {

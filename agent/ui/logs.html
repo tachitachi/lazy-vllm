@@ -111,9 +111,10 @@ function renderToolCalls(toolCalls) {
   return toolCalls.map(tc => {
     let args = tc.function?.arguments || '';
     try { args = JSON.stringify(JSON.parse(args), null, 2); } catch {}
+    const idLabel = tc.id ? `<span class="text-gray-600 font-mono ml-2">${escHtml(tc.id)}</span>` : '';
     return `
-      <div class="mt-2 bg-gray-800 rounded p-2 border border-amber-800/40">
-        <div class="text-xs font-mono text-amber-400">⚙ ${escHtml(tc.function?.name || '')}</div>
+      <div class="mt-1 bg-gray-800 rounded p-2 border border-amber-800/40">
+        <div class="flex items-center gap-1 text-xs font-mono text-amber-400">⚙ ${escHtml(tc.function?.name || '')}${idLabel}</div>
         <pre class="json-block text-gray-400 mt-1">${escHtml(args)}</pre>
       </div>`;
   }).join('');
@@ -150,7 +151,12 @@ function renderOutputLog(output) {
   if (output.content) {
     html += `<p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escHtml(output.content)}</p>`;
   }
-  html += renderToolCalls(output.tool_calls);
+  if (output.tool_calls && output.tool_calls.length > 0) {
+    html += `<div class="mt-2">
+      <div class="text-amber-400 text-xs font-semibold mb-1">Tool Calls</div>
+      ${renderToolCalls(output.tool_calls)}
+    </div>`;
+  }
   if (!output.reasoning && !output.content && (!output.tool_calls || !output.tool_calls.length)) {
     html = '<span class="text-gray-600 text-xs">empty</span>';
   }
