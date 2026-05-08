@@ -317,6 +317,7 @@ func (s *streamLogger) logOpenAIChunk(data []byte) {
 				Reasoning string     `json:"reasoning"`
 				ToolCalls []ToolCall `json:"tool_calls"`
 			} `json:"delta"`
+			FinishReason *string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(data, &chunk); err != nil || len(chunk.Choices) == 0 {
@@ -325,7 +326,11 @@ func (s *streamLogger) logOpenAIChunk(data []byte) {
 	if s.responseID == "" {
 		s.responseID = chunk.ID
 	}
-	delta := chunk.Choices[0].Delta
+	choice := chunk.Choices[0]
+	if choice.FinishReason != nil && *choice.FinishReason != "" {
+		slog.Debug("stream finish", "id", s.responseID, "finish_reason", *choice.FinishReason)
+	}
+	delta := choice.Delta
 	if delta.Content == "" && delta.Reasoning == "" && len(delta.ToolCalls) == 0 {
 		return
 	}
@@ -348,9 +353,10 @@ func (s *streamLogger) logAnthropicChunk(data []byte) {
 			Name string `json:"name"`
 		} `json:"content_block"`
 		Delta struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Thinking string `json:"thinking"`
+			Type       string `json:"type"`
+			Text       string `json:"text"`
+			Thinking   string `json:"thinking"`
+			StopReason string `json:"stop_reason"`
 		} `json:"delta"`
 	}
 	if err := json.Unmarshal(data, &event); err != nil {
@@ -361,6 +367,10 @@ func (s *streamLogger) logAnthropicChunk(data []byte) {
 		return
 	}
 	switch event.Type {
+	case "message_delta":
+		if event.Delta.StopReason != "" {
+			slog.Debug("stream finish", "id", s.responseID, "stop_reason", event.Delta.StopReason)
+		}
 	case "content_block_start":
 		if event.ContentBlock.Type == "tool_use" {
 			slog.Debug("stream chunk", "id", s.responseID, "tool_call", event.ContentBlock.Name)
