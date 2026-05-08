@@ -67,6 +67,7 @@ services:
       - PORT=8002
       - ROUTER_WINDOW_SIZE=3
       - MODEL_NAME=google/gemma-4-26B-A4B-it
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       - gemma4
     restart: always

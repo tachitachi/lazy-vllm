@@ -248,13 +248,11 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 	w.WriteHeader(resp.StatusCode)
 
 	if pctx.Stream {
+		r := io.Reader(resp.Body)
 		if slog.Default().Enabled(ctx, slog.LevelDebug) {
-			var buf bytes.Buffer
-			proxyStream(w, io.TeeReader(resp.Body, &buf))
-			logStreamResponse(buf.Bytes(), pctx.Format)
-		} else {
-			proxyStream(w, resp.Body)
+			r = newStreamLogger(resp.Body, pctx.Format)
 		}
+		proxyStream(w, r)
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		if slog.Default().Enabled(ctx, slog.LevelDebug) {
@@ -265,6 +263,122 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 	return nil
 }
 
+// streamLogger wraps an io.Reader and logs each SSE chunk as it passes through.
+// It buffers bytes until a newline, then parses and logs the completed line.
+type streamLogger struct {
+	r          io.Reader
+	format     APIFormat
+	lineBuf    []byte
+	responseID string // captured from first chunk; used to correlate interleaved responses
+}
+
+func newStreamLogger(r io.Reader, format APIFormat) io.Reader {
+	return &streamLogger{r: r, format: format}
+}
+
+func (s *streamLogger) Read(p []byte) (n int, err error) {
+	n, err = s.r.Read(p)
+	for _, b := range p[:n] {
+		if b == '\n' {
+			s.processLine(bytes.TrimSpace(s.lineBuf))
+			s.lineBuf = s.lineBuf[:0]
+		} else {
+			s.lineBuf = append(s.lineBuf, b)
+		}
+	}
+	if err != nil && len(s.lineBuf) > 0 {
+		s.processLine(bytes.TrimSpace(s.lineBuf))
+		s.lineBuf = s.lineBuf[:0]
+	}
+	return
+}
+
+func (s *streamLogger) processLine(line []byte) {
+	if !bytes.HasPrefix(line, []byte("data: ")) {
+		return
+	}
+	line = bytes.TrimPrefix(line, []byte("data: "))
+	if len(line) == 0 || string(line) == "[DONE]" {
+		return
+	}
+	if s.format == FormatAnthropic {
+		s.logAnthropicChunk(line)
+	} else {
+		s.logOpenAIChunk(line)
+	}
+}
+
+func (s *streamLogger) logOpenAIChunk(data []byte) {
+	var chunk struct {
+		ID      string `json:"id"`
+		Choices []struct {
+			Delta struct {
+				Content   string     `json:"content"`
+				Reasoning string     `json:"reasoning"`
+				ToolCalls []ToolCall `json:"tool_calls"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &chunk); err != nil || len(chunk.Choices) == 0 {
+		return
+	}
+	if s.responseID == "" {
+		s.responseID = chunk.ID
+	}
+	delta := chunk.Choices[0].Delta
+	if delta.Content == "" && delta.Reasoning == "" && len(delta.ToolCalls) == 0 {
+		return
+	}
+	slog.Debug("stream chunk",
+		"id", s.responseID,
+		"content", delta.Content,
+		"reasoning", delta.Reasoning,
+		"tool_calls", len(delta.ToolCalls),
+	)
+}
+
+func (s *streamLogger) logAnthropicChunk(data []byte) {
+	var event struct {
+		Type    string `json:"type"`
+		Message struct {
+			ID string `json:"id"`
+		} `json:"message"`
+		ContentBlock struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		} `json:"content_block"`
+		Delta struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		} `json:"delta"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		return
+	}
+	if event.Type == "message_start" && event.Message.ID != "" {
+		s.responseID = event.Message.ID
+		return
+	}
+	switch event.Type {
+	case "content_block_start":
+		if event.ContentBlock.Type == "tool_use" {
+			slog.Debug("stream chunk", "id", s.responseID, "tool_call", event.ContentBlock.Name)
+		}
+	case "content_block_delta":
+		switch event.Delta.Type {
+		case "text_delta":
+			if event.Delta.Text != "" {
+				slog.Debug("stream chunk", "id", s.responseID, "content", event.Delta.Text)
+			}
+		case "thinking_delta":
+			if event.Delta.Thinking != "" {
+				slog.Debug("stream chunk", "id", s.responseID, "reasoning", event.Delta.Thinking)
+			}
+		}
+	}
+}
+
 func logNonStreamResponse(body []byte, format APIFormat) {
 	if format == FormatAnthropic {
 		logAnthropicNonStreamResponse(body)
@@ -273,16 +387,9 @@ func logNonStreamResponse(body []byte, format APIFormat) {
 	}
 }
 
-func logStreamResponse(data []byte, format APIFormat) {
-	if format == FormatAnthropic {
-		logAnthropicStreamResponse(data)
-	} else {
-		logOpenAIStreamResponse(data)
-	}
-}
-
 func logOpenAINonStreamResponse(body []byte) {
 	var result struct {
+		ID      string `json:"id"`
 		Choices []struct {
 			Message struct {
 				Content   any        `json:"content"`
@@ -296,47 +403,16 @@ func logOpenAINonStreamResponse(body []byte) {
 	}
 	msg := result.Choices[0].Message
 	slog.Debug("respond output",
+		"id", result.ID,
 		"content", extractTextContent(msg.Content),
 		"reasoning", msg.Reasoning,
 		"tool_calls", len(msg.ToolCalls),
 	)
 }
 
-func logOpenAIStreamResponse(data []byte) {
-	var content, reasoning string
-	toolCalls := 0
-	for _, line := range bytes.Split(data, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		line = bytes.TrimPrefix(line, []byte("data: "))
-		if len(line) == 0 || string(line) == "[DONE]" {
-			continue
-		}
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content   string     `json:"content"`
-					Reasoning string     `json:"reasoning"`
-					ToolCalls []ToolCall `json:"tool_calls"`
-				} `json:"delta"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal(line, &chunk); err != nil || len(chunk.Choices) == 0 {
-			continue
-		}
-		delta := chunk.Choices[0].Delta
-		content += delta.Content
-		reasoning += delta.Reasoning
-		toolCalls += len(delta.ToolCalls)
-	}
-	slog.Debug("respond output (stream)",
-		"content", content,
-		"reasoning", reasoning,
-		"tool_calls", toolCalls,
-	)
-}
-
 func logAnthropicNonStreamResponse(body []byte) {
 	var result struct {
+		ID      string `json:"id"`
 		Content []struct {
 			Type     string `json:"type"`
 			Text     string `json:"text"`
@@ -359,53 +435,7 @@ func logAnthropicNonStreamResponse(body []byte) {
 		}
 	}
 	slog.Debug("respond output",
-		"content", content,
-		"reasoning", reasoning,
-		"tool_calls", toolCalls,
-	)
-}
-
-func logAnthropicStreamResponse(data []byte) {
-	var content, reasoning string
-	toolCalls := 0
-	for _, line := range bytes.Split(data, []byte("\n")) {
-		line = bytes.TrimSpace(line)
-		if !bytes.HasPrefix(line, []byte("data: ")) {
-			continue
-		}
-		line = bytes.TrimPrefix(line, []byte("data: "))
-		if len(line) == 0 {
-			continue
-		}
-		var event struct {
-			Type         string `json:"type"`
-			ContentBlock struct {
-				Type string `json:"type"`
-			} `json:"content_block"`
-			Delta struct {
-				Type     string `json:"type"`
-				Text     string `json:"text"`
-				Thinking string `json:"thinking"`
-			} `json:"delta"`
-		}
-		if err := json.Unmarshal(line, &event); err != nil {
-			continue
-		}
-		switch event.Type {
-		case "content_block_start":
-			if event.ContentBlock.Type == "tool_use" {
-				toolCalls++
-			}
-		case "content_block_delta":
-			switch event.Delta.Type {
-			case "text_delta":
-				content += event.Delta.Text
-			case "thinking_delta":
-				reasoning += event.Delta.Thinking
-			}
-		}
-	}
-	slog.Debug("respond output (stream)",
+		"id", result.ID,
 		"content", content,
 		"reasoning", reasoning,
 		"tool_calls", toolCalls,

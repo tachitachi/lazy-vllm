@@ -35,6 +35,19 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+func parseLogLevel(s string) slog.Level {
+	switch s {
+	case "DEBUG":
+		return slog.LevelDebug
+	case "WARN", "WARNING":
+		return slog.LevelWarn
+	case "ERROR":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func envIntOr(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -214,7 +227,7 @@ func main() {
 	}
 
 	levelVar := &slog.LevelVar{}
-	levelVar.Set(slog.LevelInfo)
+	levelVar.Set(parseLogLevel(envOr("LOG_LEVEL", "INFO")))
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: levelVar})))
 
 	slog.Info("starting agent-graph",
