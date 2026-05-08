@@ -2,9 +2,4 @@ FROM vllm/vllm-openai:gemma4-0505-cu130
 
 COPY patches/gemma4_reasoning_parser.py /tmp/gemma4_reasoning_parser.py
 COPY patches/abstract_parser.py /tmp/abstract_parser.py
-RUN python3 -c "
-import shutil, vllm, os
-base = os.path.dirname(vllm.__file__)
-shutil.copy('/tmp/gemma4_reasoning_parser.py', os.path.join(base, 'reasoning/gemma4_reasoning_parser.py'))
-shutil.copy('/tmp/abstract_parser.py', os.path.join(base, 'parser/abstract_parser.py'))
-"
+RUN python3 -c "import shutil, vllm, os; base = os.path.dirname(vllm.__file__); shutil.copy('/tmp/gemma4_reasoning_parser.py', os.path.join(base, 'reasoning/gemma4_reasoning_parser.py')); shutil.copy('/tmp/abstract_parser.py', os.path.join(base, 'parser/abstract_parser.py'))"
