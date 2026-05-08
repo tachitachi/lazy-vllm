@@ -248,11 +248,168 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 	w.WriteHeader(resp.StatusCode)
 
 	if pctx.Stream {
-		proxyStream(w, resp.Body)
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			var buf bytes.Buffer
+			proxyStream(w, io.TeeReader(resp.Body, &buf))
+			logStreamResponse(buf.Bytes(), pctx.Format)
+		} else {
+			proxyStream(w, resp.Body)
+		}
 	} else {
-		io.Copy(w, resp.Body)
+		body, _ := io.ReadAll(resp.Body)
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			logNonStreamResponse(body, pctx.Format)
+		}
+		w.Write(body)
 	}
 	return nil
+}
+
+func logNonStreamResponse(body []byte, format APIFormat) {
+	if format == FormatAnthropic {
+		logAnthropicNonStreamResponse(body)
+	} else {
+		logOpenAINonStreamResponse(body)
+	}
+}
+
+func logStreamResponse(data []byte, format APIFormat) {
+	if format == FormatAnthropic {
+		logAnthropicStreamResponse(data)
+	} else {
+		logOpenAIStreamResponse(data)
+	}
+}
+
+func logOpenAINonStreamResponse(body []byte) {
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content   any        `json:"content"`
+				Reasoning string     `json:"reasoning"`
+				ToolCalls []ToolCall `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
+		return
+	}
+	msg := result.Choices[0].Message
+	slog.Debug("respond output",
+		"content", extractTextContent(msg.Content),
+		"reasoning", msg.Reasoning,
+		"tool_calls", len(msg.ToolCalls),
+	)
+}
+
+func logOpenAIStreamResponse(data []byte) {
+	var content, reasoning string
+	toolCalls := 0
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		line = bytes.TrimPrefix(line, []byte("data: "))
+		if len(line) == 0 || string(line) == "[DONE]" {
+			continue
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   string     `json:"content"`
+					Reasoning string     `json:"reasoning"`
+					ToolCalls []ToolCall `json:"tool_calls"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(line, &chunk); err != nil || len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta
+		content += delta.Content
+		reasoning += delta.Reasoning
+		toolCalls += len(delta.ToolCalls)
+	}
+	slog.Debug("respond output (stream)",
+		"content", content,
+		"reasoning", reasoning,
+		"tool_calls", toolCalls,
+	)
+}
+
+func logAnthropicNonStreamResponse(body []byte) {
+	var result struct {
+		Content []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return
+	}
+	var content, reasoning string
+	toolCalls := 0
+	for _, block := range result.Content {
+		switch block.Type {
+		case "text":
+			content += block.Text
+		case "thinking":
+			reasoning += block.Thinking
+		case "tool_use":
+			toolCalls++
+		}
+	}
+	slog.Debug("respond output",
+		"content", content,
+		"reasoning", reasoning,
+		"tool_calls", toolCalls,
+	)
+}
+
+func logAnthropicStreamResponse(data []byte) {
+	var content, reasoning string
+	toolCalls := 0
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, []byte("data: ")) {
+			continue
+		}
+		line = bytes.TrimPrefix(line, []byte("data: "))
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Type         string `json:"type"`
+			ContentBlock struct {
+				Type string `json:"type"`
+			} `json:"content_block"`
+			Delta struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				Thinking string `json:"thinking"`
+			} `json:"delta"`
+		}
+		if err := json.Unmarshal(line, &event); err != nil {
+			continue
+		}
+		switch event.Type {
+		case "content_block_start":
+			if event.ContentBlock.Type == "tool_use" {
+				toolCalls++
+			}
+		case "content_block_delta":
+			switch event.Delta.Type {
+			case "text_delta":
+				content += event.Delta.Text
+			case "thinking_delta":
+				reasoning += event.Delta.Thinking
+			}
+		}
+	}
+	slog.Debug("respond output (stream)",
+		"content", content,
+		"reasoning", reasoning,
+		"tool_calls", toolCalls,
+	)
 }
 
 // rebuildRequestBody takes the original request body, replaces "messages" with
