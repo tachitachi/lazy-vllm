@@ -1,6 +1,8 @@
 services:
   gemma4:
-    image: vllm/vllm-openai:gemma4-0505-cu130
+    build:
+      context: .
+      dockerfile: Dockerfile.gemma4
     ports:
       - "8000:8000"
     ipc: host
