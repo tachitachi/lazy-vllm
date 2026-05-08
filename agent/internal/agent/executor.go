@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -255,16 +256,31 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 	copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 
+	reqLog := ReqLogFromCtx(ctx)
+	inputMsgs := pctx.Messages
+
 	if pctx.Stream {
 		r := io.Reader(resp.Body)
-		if slog.Default().Enabled(ctx, slog.LevelDebug) {
-			r = newStreamLogger(resp.Body, pctx.Format)
+		if slog.Default().Enabled(ctx, slog.LevelDebug) || reqLog != nil {
+			sl := &streamLogger{r: resp.Body, format: pctx.Format}
+			if reqLog != nil {
+				sl.reqLog = reqLog
+				sl.nodeID = node.ID
+				sl.inputMsgs = inputMsgs
+				sl.accumTools = make(map[int]*ToolCall)
+			}
+			r = sl
 		}
 		proxyStream(w, r)
 	} else {
 		body, _ := io.ReadAll(resp.Body)
 		if slog.Default().Enabled(ctx, slog.LevelDebug) {
 			logNonStreamResponse(body, pctx.Format)
+		}
+		if reqLog != nil {
+			if mr := parseNonStreamResponse(body, pctx.Format); mr != nil {
+				reqLog.AddCall(node.ID, "respond", 0, inputMsgs, mr)
+			}
 		}
 		w.Write(body)
 	}
@@ -273,11 +289,20 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 
 // streamLogger wraps an io.Reader and logs each SSE chunk as it passes through.
 // It buffers bytes until a newline, then parses and logs the completed line.
+// When reqLog is set, it also accumulates the full response for disk logging.
 type streamLogger struct {
 	r          io.Reader
 	format     APIFormat
 	lineBuf    []byte
 	responseID string // captured from first chunk; used to correlate interleaved responses
+
+	reqLog    *RequestLog
+	nodeID    string
+	inputMsgs []ChatMessage
+
+	accumContent   strings.Builder
+	accumReasoning strings.Builder
+	accumTools     map[int]*ToolCall // index → partial tool call being built
 }
 
 func newStreamLogger(r io.Reader, format APIFormat) io.Reader {
@@ -294,9 +319,12 @@ func (s *streamLogger) Read(p []byte) (n int, err error) {
 			s.lineBuf = append(s.lineBuf, b)
 		}
 	}
-	if err != nil && len(s.lineBuf) > 0 {
-		s.processLine(bytes.TrimSpace(s.lineBuf))
-		s.lineBuf = s.lineBuf[:0]
+	if err != nil {
+		if len(s.lineBuf) > 0 {
+			s.processLine(bytes.TrimSpace(s.lineBuf))
+			s.lineBuf = s.lineBuf[:0]
+		}
+		s.flushToLog()
 	}
 	return
 }
@@ -311,9 +339,168 @@ func (s *streamLogger) processLine(line []byte) {
 	}
 	if s.format == FormatAnthropic {
 		s.logAnthropicChunk(line)
+		if s.reqLog != nil {
+			s.accumAnthropicChunk(line)
+		}
 	} else {
 		s.logOpenAIChunk(line)
+		if s.reqLog != nil {
+			s.accumOpenAIChunk(line)
+		}
 	}
+}
+
+func (s *streamLogger) accumOpenAIChunk(data []byte) {
+	var chunk struct {
+		Choices []struct {
+			Delta struct {
+				Content   string `json:"content"`
+				Reasoning string `json:"reasoning"`
+				ToolCalls []struct {
+					Index    int    `json:"index"`
+					ID       string `json:"id"`
+					Type     string `json:"type"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &chunk); err != nil || len(chunk.Choices) == 0 {
+		return
+	}
+	d := chunk.Choices[0].Delta
+	s.accumContent.WriteString(d.Content)
+	s.accumReasoning.WriteString(d.Reasoning)
+	for _, tc := range d.ToolCalls {
+		if _, exists := s.accumTools[tc.Index]; !exists {
+			s.accumTools[tc.Index] = &ToolCall{
+				ID:   tc.ID,
+				Type: tc.Type,
+				Function: ToolFunction{Name: tc.Function.Name},
+			}
+		}
+		s.accumTools[tc.Index].Function.Arguments += tc.Function.Arguments
+	}
+}
+
+func (s *streamLogger) accumAnthropicChunk(data []byte) {
+	var event struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		} `json:"delta"`
+		ContentBlock struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+			ID   string `json:"id"`
+		} `json:"content_block"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		return
+	}
+	switch event.Type {
+	case "content_block_start":
+		if event.ContentBlock.Type == "tool_use" {
+			idx := len(s.accumTools)
+			s.accumTools[idx] = &ToolCall{
+				ID:   event.ContentBlock.ID,
+				Type: "function",
+				Function: ToolFunction{Name: event.ContentBlock.Name},
+			}
+		}
+	case "content_block_delta":
+		switch event.Delta.Type {
+		case "text_delta":
+			s.accumContent.WriteString(event.Delta.Text)
+		case "thinking_delta":
+			s.accumReasoning.WriteString(event.Delta.Thinking)
+		case "input_json_delta":
+			// append to the last tool call's arguments
+			idx := len(s.accumTools) - 1
+			if idx >= 0 {
+				if tc, ok := s.accumTools[idx]; ok {
+					tc.Function.Arguments += event.Delta.Text
+				}
+			}
+		}
+	}
+}
+
+func (s *streamLogger) flushToLog() {
+	if s.reqLog == nil {
+		return
+	}
+	indexes := make([]int, 0, len(s.accumTools))
+	for idx := range s.accumTools {
+		indexes = append(indexes, idx)
+	}
+	sort.Ints(indexes)
+	toolCalls := make([]ToolCall, 0, len(indexes))
+	for _, idx := range indexes {
+		toolCalls = append(toolCalls, *s.accumTools[idx])
+	}
+	mr := &modelResponse{
+		Content:   s.accumContent.String(),
+		Reasoning: s.accumReasoning.String(),
+		ToolCalls: toolCalls,
+	}
+	s.reqLog.AddCall(s.nodeID, "respond", 0, s.inputMsgs, mr)
+}
+
+func parseNonStreamResponse(body []byte, format APIFormat) *modelResponse {
+	if format == FormatAnthropic {
+		return parseAnthropicNonStreamResponse(body)
+	}
+	return parseOpenAINonStreamResponse(body)
+}
+
+func parseOpenAINonStreamResponse(body []byte) *modelResponse {
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content   any        `json:"content"`
+				Reasoning string     `json:"reasoning"`
+				ToolCalls []ToolCall `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || len(result.Choices) == 0 {
+		return nil
+	}
+	msg := result.Choices[0].Message
+	return &modelResponse{
+		Content:   extractTextContent(msg.Content),
+		Reasoning: msg.Reasoning,
+		ToolCalls: msg.ToolCalls,
+	}
+}
+
+func parseAnthropicNonStreamResponse(body []byte) *modelResponse {
+	var result struct {
+		Content []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil
+	}
+	var content, reasoning string
+	for _, block := range result.Content {
+		switch block.Type {
+		case "text":
+			content += block.Text
+		case "thinking":
+			reasoning += block.Thinking
+		}
+	}
+	return &modelResponse{Content: content, Reasoning: reasoning}
 }
 
 func (s *streamLogger) logOpenAIChunk(data []byte) {
