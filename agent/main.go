@@ -93,15 +93,13 @@ func buildDefaultGraph(cfg agent.Config) *agent.Graph {
 }
 
 type server struct {
-	graph    *agent.Graph
-	cfg      agent.Config
-	levelVar *slog.LevelVar
+	graph      *agent.Graph
+	cfg        agent.Config
+	levelVar   *slog.LevelVar
+	diskLogger *agent.DiskLogger
 }
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	_ = start
-
 	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
@@ -126,7 +124,14 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		NodeOutputs:     make(map[string]string),
 	}
 
-	if err := s.graph.Run(r.Context(), pctx, w); err != nil {
+	ctx := r.Context()
+	if s.diskLogger != nil {
+		reqLog := s.diskLogger.Start("openai", r.URL.Path, r.Header, bodyBytes)
+		ctx = agent.WithReqLog(ctx, reqLog)
+		defer s.diskLogger.Save(reqLog)
+	}
+
+	if err := s.graph.Run(ctx, pctx, w); err != nil {
 		slog.Error("graph execution failed", "err", err)
 	}
 }
@@ -159,7 +164,14 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		NodeOutputs:     make(map[string]string),
 	}
 
-	if err := s.graph.Run(r.Context(), pctx, w); err != nil {
+	ctx := r.Context()
+	if s.diskLogger != nil {
+		reqLog := s.diskLogger.Start("anthropic", r.URL.Path, r.Header, bodyBytes)
+		ctx = agent.WithReqLog(ctx, reqLog)
+		defer s.diskLogger.Save(reqLog)
+	}
+
+	if err := s.graph.Run(ctx, pctx, w); err != nil {
 		slog.Error("graph execution failed", "err", err)
 	}
 }
@@ -237,8 +249,19 @@ func main() {
 		"model", cfg.ModelName,
 	)
 
+	var diskLogger *agent.DiskLogger
+	if logDir := envOr("LOG_DIR", ""); logDir != "" {
+		var err error
+		diskLogger, err = agent.NewDiskLogger(logDir)
+		if err != nil {
+			slog.Warn("disk logger init failed", "err", err)
+		} else {
+			slog.Info("disk logging enabled", "log_dir", logDir)
+		}
+	}
+
 	graph := buildDefaultGraph(cfg)
-	s := &server{graph: graph, cfg: cfg, levelVar: levelVar}
+	s := &server{graph: graph, cfg: cfg, levelVar: levelVar, diskLogger: diskLogger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -248,6 +271,11 @@ func main() {
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("POST /v1/messages", s.handleMessages)
 	mux.HandleFunc("POST /log-level", s.handleLogLevel)
+	if diskLogger != nil {
+		mux.HandleFunc("GET /ui/logs", s.handleLogsUI)
+		mux.HandleFunc("GET /api/logs", s.handleLogsList)
+		mux.HandleFunc("GET /api/logs/{id}", s.handleLogDetail)
+	}
 	mux.HandleFunc("/", s.handleGenericProxy)
 
 	httpServer := &http.Server{

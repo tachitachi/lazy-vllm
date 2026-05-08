@@ -86,6 +86,9 @@ func (g *Graph) runRoute(ctx context.Context, node *Node, pctx *PipelineCtx) (st
 	if err != nil {
 		return "", err
 	}
+	if reqLog := ReqLogFromCtx(ctx); reqLog != nil {
+		reqLog.AddCall(node.ID, "route", 0, msgs, resp)
+	}
 	return strings.TrimSpace(strings.ToUpper(resp.Content)), nil
 }
 
@@ -98,6 +101,7 @@ func (g *Graph) runChain(ctx context.Context, node *Node, pctx *PipelineCtx) (st
 	copy(workingMessages, pctx.Messages)
 
 	window := g.windowSize(node.Agent)
+	iteration := 0
 
 	for {
 		windowed := applyWindow(workingMessages, window)
@@ -105,6 +109,10 @@ func (g *Graph) runChain(ctx context.Context, node *Node, pctx *PipelineCtx) (st
 		if err != nil {
 			return "", err
 		}
+		if reqLog := ReqLogFromCtx(ctx); reqLog != nil {
+			reqLog.AddCall(node.ID, "chain", iteration, windowed, resp)
+		}
+		iteration++
 
 		if len(resp.ToolCalls) > 0 {
 			// Tool call turn: preserve thinking in workingMessages (Gemma4 rule 2).

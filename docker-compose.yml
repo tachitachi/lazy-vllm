@@ -70,6 +70,9 @@ services:
       - ROUTER_WINDOW_SIZE=3
       - MODEL_NAME=google/gemma-4-26B-A4B-it
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_DIR=/logs
+    volumes:
+      - ./agent-logs:/logs
     depends_on:
       - gemma4
     restart: always
@@ -79,7 +82,7 @@ services:
     ports:
       - "3000:8080"
     environment:
-      - OLLAMA_BASE_URL=http://thinking-router:8001/v1
+      - OLLAMA_BASE_URL=http://agent-graph:8002/v1
     volumes:
       - open-webui:/app/backend/data
     depends_on:
