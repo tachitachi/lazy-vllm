@@ -1,0 +1,27 @@
+diff --git a/vllm/reasoning/gemma4_reasoning_parser.py b/vllm/reasoning/gemma4_reasoning_parser.py
+index 6f2241603..58edac230 100644
+--- a/vllm/reasoning/gemma4_reasoning_parser.py
++++ b/vllm/reasoning/gemma4_reasoning_parser.py
+@@ -159,6 +159,22 @@ class Gemma4ReasoningParser(BaseThinkingReasoningParser):
+             return None
+ 
+         if result.reasoning is None:
++            if result.content is not None and not self._prefix_stripped:
++                # `thought` may arrive as content (no <|channel> start token
++                # generated) — buffer it the same way as reasoning so that the
++                # `thought\n` role label is suppressed rather than emitted.
++                self._reasoning_text += result.content
++                if _THOUGHT_PREFIX.startswith(self._reasoning_text):
++                    return None
++                elif self._reasoning_text.startswith(_THOUGHT_PREFIX):
++                    self._prefix_stripped = True
++                    suffix = self._reasoning_text[len(_THOUGHT_PREFIX):]
++                    result.content = suffix or None
++                    return result
++                else:
++                    self._prefix_stripped = True
++                    result.content = self._reasoning_text
++                    return result
+             return result
+ 
+         # Accumulate ONLY the reasoning text from base parser results.
