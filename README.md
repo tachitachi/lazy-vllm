@@ -22,6 +22,9 @@ The core philosophy of Lazy-vLLM is to avoid using expensive reasoning capabilit
     - **Grafana**: Provides real-time visualization of performance and resource utilization.
     - **Exporters**: Includes `nvidia-gpu-exporter`, `node-exporter`, and `cadvisor` for deep hardware insights.
 
+### Gemma 4 Engine Specializations
+The `gemma4` service uses a specialized build via `Dockerfile.gemma4` that includes a critical patch for reasoning parsing. This patch (found in `patches/gemma4_reasoning_parser.py`) fixes a known issue in vLLM where reasoning content could leak into the main content channel during multi-turn tool-use streaming on Gemma 4 MoE models.
+
 ## 🛠️ Getting Started
 
 ### Prerequisites
@@ -307,10 +310,12 @@ The included Grafana dashboards allow you to monitor:
 ```text
 .
 ├── docker-compose.yml         # Main orchestration file
+├── Dockerfile.gemma4          # Gemma 4 engine build definition
 ├── Dockerfile.opencode        # Opencode service build definition
 ├── opencode/                  # Opencode service implementation
 ├── prometheus/                # Prometheus configuration
 ├── grafana/                   # Grafana provisioning and dashboards
 ├── router/                    # Thinking-Router (Go, port 8001)
-└── agent/                     # Agent Graph Framework (Go, port 8002)
+├── agent/                     # Agent Graph Framework (Go, port 8002)
+└── synthetic-ui/              # Synthetic UI for data labeling
 ```
