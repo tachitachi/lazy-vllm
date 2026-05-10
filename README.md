@@ -228,15 +228,36 @@ agent/
 ├── Dockerfile
 ├── go.mod
 ├── main.go                    # HTTP server + default classify→respond graph
+├── log_ui.go                  # HTTP handlers for the logs UI
+├── ui/
+│   └── logs.html              # Embedded logs browser UI
 └── internal/agent/
     ├── types.go               # Agent, Node, Edge, Graph, PipelineCtx, Branch
     ├── executor.go            # Graph.Run, node runners (Route/Chain/Scatter/Respond)
     ├── llm.go                 # vLLM HTTP client
     ├── history.go             # StripAllThinking, applyWindow, DeepCopy
+    ├── disk_logger.go         # Request logging: capture, save, and retrieve full call traces
     ├── anthropic.go           # Anthropic ↔ internal format conversion
     ├── stream.go              # HTTP streaming helpers
     └── metrics.go             # Prometheus metrics
 ```
+
+### Request Logging
+
+The agent includes a built-in disk logger (`disk_logger.go`) that captures every request as JSON on disk, organized by date. Each log entry records:
+
+- **Request metadata**: format (OpenAI/Anthropic), path, captured headers, full request body
+- **All LLM calls**: for each node in the graph, the input messages, output (reasoning, content, tool calls), and timing
+- **Timing**: total duration and per-call timestamps
+
+The `log_ui.go` component serves an embedded logs browser (`ui/logs.html`) that provides:
+
+- **Request list**: sidebar with format badge (OpenAI/Anthropic), duration, timestamp
+- **Per-request detail**: collapsible call history showing input messages, reasoning blocks, tool calls, and outputs
+- **Curl replay**: auto-generated curl command to replay the original request, with copy-to-clipboard
+- **Auto-refresh**: toggleable 5-second polling for new logs
+
+The logs UI is served at `/logs` with API endpoints at `/api/logs` (list) and `/api/logs/{id}` (detail) on the agent server.
 
 ## 🧪 Synthetic UI (Data Labeling Tool)
 
