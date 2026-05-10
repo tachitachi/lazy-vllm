@@ -2921,7 +2921,7 @@
                         "name": "prometheus"
                       },
                       "spec": {
-                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"0\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"0\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_drafts_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
                         "legendFormat": "Position 0"
                       }
                     },
@@ -2940,7 +2940,7 @@
                         "name": "prometheus"
                       },
                       "spec": {
-                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"1\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"1\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_drafts_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
                         "legendFormat": "Position 1"
                       }
                     },
@@ -2959,7 +2959,7 @@
                         "name": "prometheus"
                       },
                       "spec": {
-                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"2\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"2\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_drafts_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
                         "legendFormat": "Position 2"
                       }
                     },
@@ -2978,7 +2978,7 @@
                         "name": "prometheus"
                       },
                       "spec": {
-                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"3\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"3\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_drafts_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
                         "legendFormat": "Position 3"
                       }
                     },
@@ -2997,7 +2997,7 @@
                         "name": "prometheus"
                       },
                       "spec": {
-                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"4\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"4\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_drafts_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
                         "legendFormat": "Position 4"
                       }
                     },
@@ -3016,7 +3016,7 @@
                         "name": "prometheus"
                       },
                       "spec": {
-                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"5\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_draft_tokens_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_per_pos_total{model_name=\"$model_name\",position=\"5\"}[$__rate_interval])) / clamp_min(sum(rate(vllm:spec_decode_num_drafts_total{model_name=\"$model_name\"}[$__rate_interval])), 1)",
                         "legendFormat": "Position 5"
                       }
                     },
