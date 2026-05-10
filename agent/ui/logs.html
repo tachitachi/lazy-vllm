@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agent Logs</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@18.0.3/lib/marked.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.2/dist/purify.min.js" defer></script>
   <style>
     .role-system   { background:#374151; color:#d1d5db; }
     .role-user     { background:#1e40af; color:#bfdbfe; }
@@ -14,6 +16,21 @@
     .reasoning-block { border-left:3px solid #6366f1; padding-left:0.75rem; color:#a5b4fc; font-style:italic; }
     details > summary { cursor:pointer; user-select:none; }
     details > summary::-webkit-details-marker { display:none; }
+    /* dark-mode markdown styling */
+    .md-content   { color:#e5e7eb; font-size:0.875rem; line-height:1.7; }
+    .md-content p { margin:0.25rem 0; }
+    .md-content code { background:#1f2937; padding:0.1rem 0.3rem; border-radius:4px; font-size:0.8rem; font-family:ui-monospace,monospace; }
+    .md-content pre { background:#1f2937; padding:0.75rem 1rem; border-radius:6px; overflow-x:auto; }
+    .md-content pre code { background:transparent; padding:0; font-size:0.75rem; color:#e5e7eb; }
+    .md-content table { border-collapse:collapse; }
+    .md-content th, .md-content td { border:1px solid #374151; padding:0.3rem 0.6rem; }
+    .md-content th { background:#1f2937; font-weight:600; }
+    .md-content blockquote { border-left:3px solid #4b5563; padding-left:0.75rem; color:#9ca3af; }
+    .md-content a { color:#60a5fa; text-decoration:underline; }
+    .md-content h1,.md-content h2,.md-content h3,.md-content h4 { color:#f9fafb; margin:0.5rem 0 0.25rem; font-weight:600; }
+    .md-content hr { border-color:#374151; margin:0.5rem 0; }
+    .md-content ul,.md-content ol { padding-left:1.5rem; margin:0.25rem 0; }
+    .md-content li { margin:0.1rem 0; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-200 h-screen flex flex-col overflow-hidden">
@@ -55,6 +72,27 @@ let selectedId = null;
 let allLogs = [];
 let refreshTimer = null;
 
+// ── Markdown renderer ────────────────────────────────────────
+
+let _renderMarkdownFn = null;
+
+function renderMarkdown(text) {
+  if (!_renderMarkdownFn) {
+    if (typeof marked === 'undefined') {
+      _renderMarkdownFn = function(t) { return t ? '<p class="text-sm text-gray-300 mt-1 whitespace-pre-wrap break-words">' + escHtml(t) + '</p>' : ''; };
+    } else {
+      marked.setOptions({ breaks: true, gfm: true, headerIds: false });
+      var sanitizer = typeof DOMPurify !== 'undefined' ? DOMPurify : null;
+      _renderMarkdownFn = function(text) {
+        if (!text) return '';
+        var raw = marked.parse(String(text));
+        try { return sanitizer ? sanitizer.sanitize(raw) : raw; } catch { return raw; }
+      };
+    }
+  }
+  return _renderMarkdownFn(text);
+}
+
 // ── Fetch helpers ────────────────────────────────────────────
 
 async function fetchList() {
@@ -91,15 +129,19 @@ function roleBadge(role) {
   return `<span class="inline-block text-xs font-mono px-2 py-0.5 rounded ${cls}">${role}</span>`;
 }
 
-function renderContent(content) {
+function renderContent(content, enableMarkdown) {
   if (content === null || content === undefined || content === '') return '';
   if (typeof content === 'string') {
-    return `<p class="text-sm text-gray-300 mt-1 whitespace-pre-wrap break-words">${escHtml(content)}</p>`;
+    const renderedContent = enableMarkdown === true ? renderMarkdown(escHtml(content)) : escHtml(content);
+    return `<div class="md-content whitespace-pre-wrap test-foo">${renderedContent}</div>`;
   }
   // array of ContentBlocks
   if (Array.isArray(content)) {
     return content.map(b => {
-      if (b.type === 'text') return `<p class="text-sm text-gray-300 mt-1 whitespace-pre-wrap break-words">${escHtml(b.text || '')}</p>`;
+      if (b.type === 'text') {
+        const renderedContent = enableMarkdown === true ? renderMarkdown(escHtml(b.text) || '') : escHtml(b.text) || '';
+        return `<div class="md-content whitespace-pre-wrap test-bar">${renderedContent}</div>`
+      };
       return `<p class="text-xs text-gray-500 mt-1">[${b.type}]</p>`;
     }).join('');
   }
@@ -122,6 +164,7 @@ function renderToolCalls(toolCalls) {
 
 function renderMessage(msg) {
   const role = msg.role || 'unknown';
+  const enableMarkdown = role !== 'tool';
   let html = `<div class="mb-3 p-3 bg-gray-800/60 rounded border border-gray-700">`;
   html += `<div class="flex items-center gap-2 mb-1">${roleBadge(role)}`;
   if (msg.name) html += `<span class="text-xs text-gray-500 font-mono">${escHtml(msg.name)}</span>`;
@@ -130,10 +173,10 @@ function renderMessage(msg) {
   if (msg.reasoning) {
     html += `<div class="reasoning-block text-xs mt-1 mb-2">
       <div class="text-indigo-400 text-xs font-semibold mb-1">Reasoning</div>
-      <p class="whitespace-pre-wrap break-words">${escHtml(msg.reasoning)}</p>
+      <div class="whitespace-pre-wrap break-words">${renderMarkdown(msg.reasoning, enableMarkdown)}</div>
     </div>`;
   }
-  html += renderContent(msg.content);
+  html += renderContent(msg.content, enableMarkdown);
   html += renderToolCalls(msg.tool_calls);
   html += `</div>`;
   return html;
@@ -145,11 +188,11 @@ function renderOutputLog(output) {
   if (output.reasoning) {
     html += `<div class="reasoning-block text-xs mb-2">
       <div class="text-indigo-400 text-xs font-semibold mb-1">Reasoning</div>
-      <p class="whitespace-pre-wrap break-words">${escHtml(output.reasoning)}</p>
+      <div class="whitespace-pre-wrap break-words">${renderMarkdown(output.reasoning)}</div>
     </div>`;
   }
   if (output.content) {
-    html += `<p class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escHtml(output.content)}</p>`;
+    html += `<div class="md-content">${renderMarkdown(output.content)}</div>`;
   }
   if (output.tool_calls && output.tool_calls.length > 0) {
     html += `<div class="mt-2">
