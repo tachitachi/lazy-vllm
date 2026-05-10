@@ -11,11 +11,11 @@ type AnthropicContentBlock struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
 	Thinking  string          `json:"thinking,omitempty"`
-	ID        string          `json:"id,omitempty"`        // tool_use
-	Name      string          `json:"name,omitempty"`      // tool_use
-	Input     json.RawMessage `json:"input,omitempty"`     // tool_use
+	ID        string          `json:"id,omitempty"`          // tool_use
+	Name      string          `json:"name,omitempty"`        // tool_use
+	Input     json.RawMessage `json:"input,omitempty"`       // tool_use
 	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result
-	Content   any             `json:"content,omitempty"`   // tool_result
+	Content   any             `json:"content,omitempty"`     // tool_result
 }
 
 // AnthropicMessage is the wire format for a message in the Anthropic API.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -59,7 +60,22 @@ func envIntOr(key string, fallback int) int {
 
 func boolPtr(v bool) *bool { return &v }
 
-func buildDefaultGraph(cfg agent.Config) *agent.Graph {
+// extractModel reads the "model" field from the raw request body (OpenAI or Anthropic format).
+func extractModel(body []byte) string {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil {
+		return ""
+	}
+	if m, ok := top["model"]; ok {
+		var model string
+		if err := json.Unmarshal(m, &model); err == nil {
+			return model
+		}
+	}
+	return ""
+}
+
+func buildDefaultGraph(backends []agent.BackendRule, cfg agent.Config) *agent.Graph {
 	return &agent.Graph{
 		Entry: "respond",
 		Cfg:   cfg,
@@ -95,6 +111,7 @@ func buildDefaultGraph(cfg agent.Config) *agent.Graph {
 type server struct {
 	graph      *agent.Graph
 	cfg        agent.Config
+	backends   []agent.BackendRule
 	levelVar   *slog.LevelVar
 	diskLogger *agent.DiskLogger
 }
@@ -115,6 +132,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	model := extractModel(bodyBytes)
 	pctx := &agent.PipelineCtx{
 		OriginalBody:    bodyBytes,
 		OriginalHeaders: r.Header.Clone(),
@@ -122,6 +140,9 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		Format:          agent.FormatOpenAI,
 		Messages:        agent.StripAllThinking(req.Messages),
 		NodeOutputs:     make(map[string]string),
+	}
+	if model != "" {
+		pctx.BackendURL = agent.ResolveBackend(s.backends, model)
 	}
 
 	ctx := r.Context()
@@ -153,6 +174,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	model := extractModel(bodyBytes)
 	msgs := agent.AnthropicToChatMessages(req.System, req.Messages)
 
 	pctx := &agent.PipelineCtx{
@@ -162,6 +184,9 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Format:          agent.FormatAnthropic,
 		Messages:        agent.StripAllThinking(msgs),
 		NodeOutputs:     make(map[string]string),
+	}
+	if model != "" {
+		pctx.BackendURL = agent.ResolveBackend(s.backends, model)
 	}
 
 	ctx := r.Context()
@@ -204,8 +229,17 @@ func (s *server) handleLogLevel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleGenericProxy(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	model := extractModel(body)
+	baseURL := agent.ResolveBackend(s.backends, model)
+
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method,
-		s.cfg.VLLMBaseURL+r.RequestURI, r.Body)
+		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(body)))
 	if err != nil {
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 		return
@@ -231,11 +265,24 @@ func (s *server) handleGenericProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	var backends []agent.BackendRule
+	if raw := envOr("BACKENDS_MAP", ""); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &backends); err != nil {
+			slog.Error("invalid BACKENDS_MAP", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("loaded backends", "rules", len(backends))
+	} else {
+		slog.Error("BACKENDS_MAP is required")
+		os.Exit(1)
+	}
+
+	port := envIntOr("PORT", 8002)
 	cfg := agent.Config{
-		VLLMBaseURL: envOr("VLLM_BASE_URL", "http://gemma4:8000"),
-		Port:        envIntOr("PORT", 8001),
-		WindowSize:  envIntOr("ROUTER_WINDOW_SIZE", 3),
-		ModelName:   envOr("MODEL_NAME", "google/gemma-4-26B-A4B-it"),
+		Port:       port,
+		Backends:   backends,
+		WindowSize: envIntOr("ROUTER_WINDOW_SIZE", 3),
+		ModelName:  envOr("MODEL_NAME", "google/gemma-4-26B-A4B-it"),
 	}
 
 	levelVar := &slog.LevelVar{}
@@ -243,7 +290,6 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: levelVar})))
 
 	slog.Info("starting agent-graph",
-		"vllm_base_url", cfg.VLLMBaseURL,
 		"port", cfg.Port,
 		"window_size", cfg.WindowSize,
 		"model", cfg.ModelName,
@@ -260,8 +306,8 @@ func main() {
 		}
 	}
 
-	graph := buildDefaultGraph(cfg)
-	s := &server{graph: graph, cfg: cfg, levelVar: levelVar, diskLogger: diskLogger}
+	graph := buildDefaultGraph(backends, cfg)
+	s := &server{graph: graph, cfg: cfg, backends: backends, levelVar: levelVar, diskLogger: diskLogger}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {

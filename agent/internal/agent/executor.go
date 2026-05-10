@@ -221,7 +221,7 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 			http.Error(w, "failed to rebuild request", http.StatusInternalServerError)
 			return fmt.Errorf("respond: rebuild anthropic: %w", err)
 		}
-		endpoint = g.Cfg.VLLMBaseURL + "/v1/messages"
+		endpoint = pctx.BackendURL + "/v1/messages"
 		passthroughHeaders = []string{"x-api-key", "anthropic-version", "anthropic-beta", "Authorization"}
 	} else {
 		var err error
@@ -230,7 +230,7 @@ func (g *Graph) runRespond(ctx context.Context, node *Node, pctx *PipelineCtx, w
 			http.Error(w, "failed to rebuild request", http.StatusInternalServerError)
 			return fmt.Errorf("respond: rebuild openai: %w", err)
 		}
-		endpoint = g.Cfg.VLLMBaseURL + "/v1/chat/completions"
+		endpoint = pctx.BackendURL + "/v1/chat/completions"
 		passthroughHeaders = []string{"Authorization", "x-api-key"}
 	}
 
@@ -377,8 +377,8 @@ func (s *streamLogger) accumOpenAIChunk(data []byte) {
 	for _, tc := range d.ToolCalls {
 		if _, exists := s.accumTools[tc.Index]; !exists {
 			s.accumTools[tc.Index] = &ToolCall{
-				ID:   tc.ID,
-				Type: tc.Type,
+				ID:       tc.ID,
+				Type:     tc.Type,
 				Function: ToolFunction{Name: tc.Function.Name},
 			}
 		}
@@ -409,8 +409,8 @@ func (s *streamLogger) accumAnthropicChunk(data []byte) {
 		if event.ContentBlock.Type == "tool_use" {
 			idx := len(s.accumTools)
 			s.accumTools[idx] = &ToolCall{
-				ID:   event.ContentBlock.ID,
-				Type: "function",
+				ID:       event.ContentBlock.ID,
+				Type:     "function",
 				Function: ToolFunction{Name: event.ContentBlock.Name},
 			}
 		}

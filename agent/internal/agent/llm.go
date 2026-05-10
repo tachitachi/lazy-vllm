@@ -65,8 +65,11 @@ func callModel(ctx context.Context, cfg Config, ag Agent, pctx *PipelineCtx, msg
 		return nil, fmt.Errorf("callModel marshal: %w", err)
 	}
 
+	if pctx.BackendURL == "" {
+		return nil, fmt.Errorf("callModel: no backend URL set")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		cfg.VLLMBaseURL+"/v1/chat/completions", bytes.NewReader(body))
+		pctx.BackendURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("callModel request: %w", err)
 	}

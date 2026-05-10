@@ -6,11 +6,16 @@ import (
 	"net/http"
 )
 
+type BackendRule struct {
+	Prefix string
+	URL    string
+}
+
 type Config struct {
-	VLLMBaseURL string
-	Port        int
-	WindowSize  int
-	ModelName   string
+	Backends   []BackendRule
+	Port       int
+	WindowSize int
+	ModelName  string
 }
 
 type HistoryPolicy struct {
@@ -27,7 +32,7 @@ type ToolDef struct {
 
 type Agent struct {
 	SystemPrompt     string
-	Model            string   // empty = inherit from Config
+	Model            string // empty = inherit from Config
 	MaxTokens        int
 	ThinkingMode     *bool    // nil = inherit from pctx; true/false = force
 	StructuredChoice []string // enables structured_output.choice
@@ -78,7 +83,7 @@ type Graph struct {
 type APIFormat int
 
 const (
-	FormatOpenAI    APIFormat = iota
+	FormatOpenAI APIFormat = iota
 	FormatAnthropic
 )
 
@@ -93,11 +98,12 @@ type PipelineCtx struct {
 
 	ThinkingMode  *bool  // nil = resolve from Agent then original request
 	ModelOverride string // empty = resolve from Agent then Config
+	BackendURL    string // resolved upstream URL for this request
 }
 
 type ChatMessage struct {
 	Role             string     `json:"role"`
-	Content          any        `json:"content"`                    // string or []ContentBlock
+	Content          any        `json:"content"`             // string or []ContentBlock
 	ReasoningContent string     `json:"reasoning,omitempty"` // vLLM OpenAI format thinking
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`

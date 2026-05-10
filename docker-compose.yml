@@ -125,10 +125,10 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - VLLM_BASE_URL=http://qwen36:8000
+      - BACKENDS_MAP=[{"prefix":"RedHatAI/Qwen3.6","url":"http://qwen36:8000"},{"prefix":"Qwen3.6","url":"http://qwen36:8000"},{"prefix":"Qwen3.6","url":"http://qwen36:8000"},{"prefix":"google","url":"http://gemma4:8000"},{"prefix":"RedHatAI/gemma","url":"http://gemma4:8000"},{"prefix":"gemma","url":"http://gemma4:8000"}]
       - PORT=8002
       - ROUTER_WINDOW_SIZE=3
-      - MODEL_NAME=RedHatAI/Qwen3.6-35B-A3B-NVFP4
+      - MODEL_NAME=google/gemma-4-26B-A4B-it
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_DIR=/logs
     volumes:
