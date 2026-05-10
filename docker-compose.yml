@@ -5,9 +5,15 @@ services:
       context: .
       dockerfile: Dockerfile.gemma4
     ports:
-      - "8000:8000"
+      - "8001:8000"
     ipc: host
     shm_size: '16g'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
       # - ${HOME}/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4c55b528bdc40b4e79ed7fd4e2f8e46fa5aaed5a/chat_template.jinja:/vllm-workspace/examples/tool_chat_template_gemma4.jinja
@@ -20,13 +26,14 @@ services:
               capabilities: [gpu]
     restart: always
     command:
-      - --model=google/gemma-4-26B-A4B-it
+      - --model=RedHatAI/gemma-4-26B-A4B-it-NVFP4
       - --served-model-name
       - google/gemma-4-26B-A4B-it
+      - RedHatAI/gemma-4-26B-A4B-it-NVFP4
       - gemma-4-26B-A4B-it
       - --max-model-len=262144
-      - --gpu-memory-utilization=0.50
-      - --quantization=fp8
+      - --gpu-memory-utilization=0.40
+      # - --quantization=fp8
       - --kv-cache-dtype=fp8
       - --host=0.0.0.0
       - --port=8000
@@ -37,14 +44,18 @@ services:
       - --chat-template=examples/tool_chat_template_gemma4.jinja
       - --enable-prefix-caching
       - --enable-chunked-prefill
-      - --max-num-seqs=256
+      - --max-num-seqs=64
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"enable_thinking": true}'
-      - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 6}'
+      # - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 6}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
     profiles:
       - gemma4
+      - all
+    depends_on:
+      qwen36:
+        condition: service_healthy
 
   qwen36:
     image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
@@ -52,6 +63,12 @@ services:
       - "8000:8000"
     ipc: host
     shm_size: '16g'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     deploy:
@@ -68,7 +85,7 @@ services:
       - RedHatAI/Qwen3.6-35B-A3B-NVFP4
       - Qwen3.6-35B-A3B-NVFP4
       - --max-model-len=262144
-      - --gpu-memory-utilization=0.50
+      - --gpu-memory-utilization=0.40
       - --kv-cache-dtype=fp8
       - --host=0.0.0.0
       - --port=8000
@@ -78,14 +95,15 @@ services:
       - --tool-call-parser=qwen3_coder
       - --enable-prefix-caching
       - --enable-chunked-prefill
-      - --max-num-seqs=256
+      - --max-num-seqs=192
       - --max-num-batched-tokens=8192
-      - '--default-chat-template-kwargs={"preserve_thinking":true}'
-      - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
+      - '--default-chat-template-kwargs={"preserve_thinking": true, "enable_thinking": true}'
+      # - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
     profiles:
       - qwen36
+      - all
 
   # thinking-router:
   #   build:

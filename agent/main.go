@@ -61,7 +61,7 @@ func boolPtr(v bool) *bool { return &v }
 
 func buildDefaultGraph(cfg agent.Config) *agent.Graph {
 	return &agent.Graph{
-		Entry: "classify",
+		Entry: "respond",
 		Cfg:   cfg,
 		Nodes: map[string]*agent.Node{
 			"classify": {

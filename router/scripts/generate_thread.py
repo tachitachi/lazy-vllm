@@ -10,13 +10,14 @@ import uuid
 # Configuration
 DEFAULT_ROUTER_URL = "http://localhost:8001/v1/chat/completions"
 DEFAULT_GENERATOR_URL = "http://localhost:8000/v1/chat/completions"
+MODEL = "Qwen3.6-35B-A3B-NVFP4"
 
 def generate_response(llm_url, history):
     """
     Generates a real assistant response given the current conversation history.
     """
     payload = {
-        "model": "google/gemma-4-26B-A4B-it",
+        "model": MODEL,
         "messages": history,
         "temperature": 0.7,
         "chat_template_kwargs": {"enable_thinking": False},
@@ -91,7 +92,7 @@ def generate_question(llm_url, target_type, context=None):
         )
 
     payload = {
-        "model": "google/gemma-4-26B-A4B-it",
+        "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "chat_template_kwargs": {"enable_thinking": False},
     }

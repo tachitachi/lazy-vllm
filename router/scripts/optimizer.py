@@ -3,6 +3,8 @@ import argparse
 import requests
 import sys
 
+MODEL = "Qwen3.6-35B-A3B-NVFP4"
+
 def optimize_prompt(llm_url: str, report_path: str, current_prompt: str) -> str:
     """
     Sends the report and current prompt to an LLM to generate an improved prompt.
@@ -36,7 +38,7 @@ def optimize_prompt(llm_url: str, report_path: str, current_prompt: str) -> str:
     )
 
     payload = {
-        "model": "google/gemma-4-26B-A4B-it",
+        "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "chat_template_kwargs": {"enable_thinking": True},
     }
