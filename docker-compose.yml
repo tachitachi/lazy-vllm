@@ -1,5 +1,6 @@
 services:
   gemma4:
+    # image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
     build:
       context: .
       dockerfile: Dockerfile.gemma4
@@ -9,7 +10,7 @@ services:
     shm_size: '16g'
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-      - ${HOME}/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4c55b528bdc40b4e79ed7fd4e2f8e46fa5aaed5a/chat_template.jinja:/vllm-workspace/examples/tool_chat_template_gemma4.jinja
+      # - ${HOME}/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4c55b528bdc40b4e79ed7fd4e2f8e46fa5aaed5a/chat_template.jinja:/vllm-workspace/examples/tool_chat_template_gemma4.jinja
     deploy:
       resources:
         reservations:
@@ -42,21 +43,62 @@ services:
       - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 6}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
-
-  thinking-router:
-    build:
-      context: ./router
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8001"
-    environment:
-      - VLLM_BASE_URL=http://gemma4:8000
-      - PORT=8001
-      - ROUTER_WINDOW_SIZE=3
-      - MODEL_NAME=google/gemma-4-26B-A4B-it
-    depends_on:
+    profiles:
       - gemma4
+
+  qwen36:
+    image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
+    ports:
+      - "8000:8000"
+    ipc: host
+    shm_size: '16g'
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     restart: always
+    command:
+      - --model=RedHatAI/Qwen3.6-35B-A3B-NVFP4
+      - --served-model-name
+      - RedHatAI/Qwen3.6-35B-A3B-NVFP4
+      - Qwen3.6-35B-A3B-NVFP4
+      - --max-model-len=262144
+      - --gpu-memory-utilization=0.50
+      - --kv-cache-dtype=fp8
+      - --host=0.0.0.0
+      - --port=8000
+      - --async-scheduling
+      - --enable-auto-tool-choice
+      - --reasoning-parser=qwen3
+      - --tool-call-parser=qwen3_coder
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --max-num-seqs=256
+      - --max-num-batched-tokens=8192
+      - '--default-chat-template-kwargs={"preserve_thinking":true}'
+      - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
+      - --mm-processor-cache-type=lru
+      - --mm-processor-cache-gb=8
+    profiles:
+      - qwen36
+
+  # thinking-router:
+  #   build:
+  #     context: ./router
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8001:8001"
+  #   environment:
+  #     - VLLM_BASE_URL=http://gemma4:8000
+  #     - PORT=8001
+  #     - ROUTER_WINDOW_SIZE=3
+  #     - MODEL_NAME=google/gemma-4-26B-A4B-it
+  #   restart: always
 
   agent-graph:
     build:
@@ -65,16 +107,14 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - VLLM_BASE_URL=http://gemma4:8000
+      - VLLM_BASE_URL=http://qwen36:8000
       - PORT=8002
       - ROUTER_WINDOW_SIZE=3
-      - MODEL_NAME=google/gemma-4-26B-A4B-it
+      - MODEL_NAME=RedHatAI/Qwen3.6-35B-A3B-NVFP4
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_DIR=/logs
     volumes:
       - ./agent-logs:/logs
-    depends_on:
-      - gemma4
     restart: always
 
   open-webui:
@@ -85,8 +125,6 @@ services:
       - OLLAMA_BASE_URL=http://agent-graph:8002/v1
     volumes:
       - open-webui:/app/backend/data
-    depends_on:
-      - thinking-router
     restart: always
 
   node-exporter:
@@ -161,29 +199,29 @@ services:
       - prometheus
     restart: always
 
-  opencode:
-    build:
-      context: .
-      dockerfile: Dockerfile.opencode
-    user: "${UID:-1000}:${GID:-1000}"
-    ports:
-      - "4096:4096"
-    volumes:
-      - ${WORKSPACE_PATH:-${HOME}/GitHub}:/workspace
-      - ./opencode/data:/home/opencode
-      - ./opencode/opencode.json:/home/opencode/.config/opencode/opencode.json:ro
-    environment:
-      HOME: /home/opencode
-      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
-      VLLM_API_KEY: EMPTY
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
-    depends_on:
-      - gemma4
-    restart: unless-stopped
+  # opencode:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.opencode
+  #   user: "${UID:-1000}:${GID:-1000}"
+  #   ports:
+  #     - "4096:4096"
+  #   volumes:
+  #     - ${WORKSPACE_PATH:-${HOME}/GitHub}:/workspace
+  #     - ./opencode/data:/home/opencode
+  #     - ./opencode/opencode.json:/home/opencode/.config/opencode/opencode.json:ro
+  #   environment:
+  #     HOME: /home/opencode
+  #     OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
+  #     VLLM_API_KEY: EMPTY
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  #     GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  #     OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  #     GROQ_API_KEY: ${GROQ_API_KEY:-}
+  #   depends_on:
+  #     - gemma4
+  #   restart: unless-stopped
 
 volumes:
   open-webui:
