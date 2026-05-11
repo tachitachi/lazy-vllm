@@ -26,10 +26,19 @@ Then point any OpenAI/Anthropic SDK client at `http://localhost:8002`.
 |----------|-------------|---------|
 | `BACKENDS_MAP` | JSON array of `{prefix, url}` routing rules | **required** |
 | `PORT` | HTTP listen port | `8002` |
-| `LOG_DIR` | Directory for persisted request/response logs | none (disabled) |
+| `LOG_DIR` | Directory for persisted request/response logs (SQLite DB) | none (disabled) |
 | `LOG_LEVEL` | Log verbosity: DEBUG, INFO, WARN, ERROR | `INFO` |
 
 `BACKENDS_MAP` is tried in order — the first rule whose `prefix` matches the request model wins.
+
+## Logging
+
+Captured logs are stored in a SQLite database (`logs.db`) using the pure-Go `modernc.org/sqlite` driver — no CGo required.
+The schema uses versioned migrations via `PRAGMA user_version` so it can evolve without manual upgrades.
+WAL mode is enabled for concurrent reads during writes.
+
+When `LOG_DIR` is set, every request is indexed by `started_at` and queryable via the `/api/logs` and `/api/logs/{id}` endpoints,
+which serve the JSON consumed by the web UI at `/ui/logs`.
 
 ## Endpoints
 
