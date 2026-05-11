@@ -14,6 +14,43 @@ import (
 	"time"
 )
 
+// Message mirrors the shape expected by the log UI (role + content + optional fields).
+// Content is kept as raw JSON to handle both string and content-block array forms.
+type Message struct {
+	Role             string          `json:"role"`
+	Content          json.RawMessage `json:"content,omitempty"`
+	ReasoningContent string          `json:"reasoning,omitempty"`
+	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID       string          `json:"tool_call_id,omitempty"`
+	Name             string          `json:"name,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string   `json:"id,omitempty"`
+	Type     string   `json:"type,omitempty"`
+	Function ToolFunc `json:"function"`
+}
+
+type ToolFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type OutputLog struct {
+	Reasoning string     `json:"reasoning,omitempty"`
+	Content   string     `json:"content,omitempty"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+}
+
+type CallLog struct {
+	NodeID    string    `json:"node_id"`
+	NodeKind  string    `json:"node_kind"`
+	Iteration int       `json:"iteration"`
+	Timestamp time.Time `json:"timestamp"`
+	Input     []Message `json:"input"`
+	Output    OutputLog `json:"output"`
+}
+
 type RequestLog struct {
 	ID             string            `json:"id"`
 	StartedAt      time.Time         `json:"started_at"`
@@ -23,7 +60,20 @@ type RequestLog struct {
 	RequestPath    string            `json:"request_path"`
 	RequestHeaders map[string]string `json:"request_headers"`
 	RequestBody    json.RawMessage   `json:"request_body"`
+	Calls          []CallLog         `json:"calls"`
 	mu             sync.Mutex
+}
+
+func (r *RequestLog) SetCall(input []Message, output OutputLog) {
+	r.mu.Lock()
+	r.Calls = []CallLog{{
+		NodeID:    "proxy",
+		NodeKind:  "proxy",
+		Timestamp: time.Now(),
+		Input:     input,
+		Output:    output,
+	}}
+	r.mu.Unlock()
 }
 
 type LogSummary struct {

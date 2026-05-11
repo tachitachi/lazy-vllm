@@ -20,6 +20,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// responseCapture wraps http.ResponseWriter to tee writes into a buffer
+// so the response body can be inspected after forwarding completes.
+type responseCapture struct {
+	http.ResponseWriter
+	buf bytes.Buffer
+}
+
+func (rc *responseCapture) Write(b []byte) (int, error) {
+	rc.buf.Write(b)
+	return rc.ResponseWriter.Write(b)
+}
+
+func (rc *responseCapture) Flush() {
+	if f, ok := rc.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 type backendRule struct {
 	Prefix string `json:"prefix"`
 	URL    string `json:"url"`
@@ -62,6 +80,23 @@ var passthroughHeaders = []string{
 	"anthropic-version", "anthropic-beta",
 }
 
+func flushCopy(w http.ResponseWriter, r io.Reader) {
+	buf := make([]byte, 4096)
+	flusher, canFlush := w.(http.Flusher)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			w.Write(buf[:n])
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+		if err != nil {
+			break
+		}
+	}
+}
+
 func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, baseURL string, body []byte) {
 	upstream, err := http.NewRequestWithContext(ctx, r.Method,
 		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(body)))
@@ -86,7 +121,7 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	flushCopy(w, resp.Body)
 }
 
 func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -99,14 +134,25 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	model := extractModel(body)
 	baseURL := resolveBackend(s.backends, model)
 
-	ctx := r.Context()
-	if s.diskLogger != nil {
-		reqLog := s.diskLogger.Start("openai", r.URL.Path, r.Header, body)
-		ctx = logger.WithReqLog(ctx, reqLog)
-		defer s.diskLogger.Save(reqLog)
+	if s.diskLogger == nil {
+		forwardRequest(r.Context(), w, r, baseURL, body)
+		return
 	}
 
-	forwardRequest(ctx, w, r, baseURL, body)
+	reqLog := s.diskLogger.Start("openai", r.URL.Path, r.Header, body)
+	defer s.diskLogger.Save(reqLog)
+
+	var req struct {
+		Stream bool `json:"stream"`
+	}
+	json.Unmarshal(body, &req)
+
+	rc := &responseCapture{ResponseWriter: w}
+	forwardRequest(r.Context(), rc, r, baseURL, body)
+	reqLog.SetCall(
+		logger.ParseMessages(body),
+		logger.ParseOpenAIOutput(rc.buf.Bytes(), req.Stream),
+	)
 }
 
 func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
@@ -119,14 +165,25 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	model := extractModel(body)
 	baseURL := resolveBackend(s.backends, model)
 
-	ctx := r.Context()
-	if s.diskLogger != nil {
-		reqLog := s.diskLogger.Start("anthropic", r.URL.Path, r.Header, body)
-		ctx = logger.WithReqLog(ctx, reqLog)
-		defer s.diskLogger.Save(reqLog)
+	if s.diskLogger == nil {
+		forwardRequest(r.Context(), w, r, baseURL, body)
+		return
 	}
 
-	forwardRequest(ctx, w, r, baseURL, body)
+	reqLog := s.diskLogger.Start("anthropic", r.URL.Path, r.Header, body)
+	defer s.diskLogger.Save(reqLog)
+
+	var req struct {
+		Stream bool `json:"stream"`
+	}
+	json.Unmarshal(body, &req)
+
+	rc := &responseCapture{ResponseWriter: w}
+	forwardRequest(r.Context(), rc, r, baseURL, body)
+	reqLog.SetCall(
+		logger.ParseAnthropicMessages(body),
+		logger.ParseAnthropicOutput(rc.buf.Bytes(), req.Stream),
+	)
 }
 
 func (s *server) handleGenericProxy(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +219,7 @@ func (s *server) handleGenericProxy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	flushCopy(w, resp.Body)
 }
 
 func (s *server) handleLogLevel(w http.ResponseWriter, r *http.Request) {

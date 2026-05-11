@@ -253,7 +253,7 @@ function renderDetail(log) {
     <div class="space-y-4">`;
 
   (log.calls || []).forEach((call, i) => {
-    const kindColor = call.node_kind === 'route' ? 'text-cyan-400' : 'text-purple-400';
+    const kindColor = call.node_kind === 'route' ? 'text-cyan-400' : call.node_kind === 'proxy' ? 'text-emerald-400' : 'text-purple-400';
     const iterLabel = call.node_kind === 'chain' && call.iteration > 0
       ? ` <span class="text-gray-500 text-xs">iter ${call.iteration}</span>` : '';
 
