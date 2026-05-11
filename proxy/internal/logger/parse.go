@@ -52,11 +52,11 @@ type anthropicBlock struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
 	Thinking  string          `json:"thinking,omitempty"`
-	ID        string          `json:"id,omitempty"`        // tool_use
-	Name      string          `json:"name,omitempty"`      // tool_use
-	Input     json.RawMessage `json:"input,omitempty"`     // tool_use
+	ID        string          `json:"id,omitempty"`          // tool_use
+	Name      string          `json:"name,omitempty"`        // tool_use
+	Input     json.RawMessage `json:"input,omitempty"`       // tool_use
 	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result
-	Content   json.RawMessage `json:"content,omitempty"`   // tool_result
+	Content   json.RawMessage `json:"content,omitempty"`     // tool_result
 }
 
 func convertAnthropicMessage(m anthropicMessage) []Message {
@@ -137,8 +137,8 @@ func convertAnthropicAssistantBlocks(blocks []anthropicBlock) Message {
 				args = string(b.Input)
 			}
 			toolCalls = append(toolCalls, ToolCall{
-				ID:   b.ID,
-				Type: "function",
+				ID:       b.ID,
+				Type:     "function",
 				Function: ToolFunc{Name: b.Name, Arguments: args},
 			})
 		}
@@ -277,8 +277,8 @@ func parseOpenAISSE(data []byte) OutputLog {
 		for _, tc := range d.ToolCalls {
 			if _, exists := accumTools[tc.Index]; !exists {
 				accumTools[tc.Index] = &ToolCall{
-					ID:   tc.ID,
-					Type: tc.Type,
+					ID:       tc.ID,
+					Type:     tc.Type,
 					Function: ToolFunc{Name: tc.Function.Name},
 				}
 			}
@@ -323,8 +323,8 @@ func parseAnthropicJSON(data []byte) OutputLog {
 				args = string(block.Input)
 			}
 			toolCalls = append(toolCalls, ToolCall{
-				ID:   block.ID,
-				Type: "function",
+				ID:       block.ID,
+				Type:     "function",
 				Function: ToolFunc{Name: block.Name, Arguments: args},
 			})
 		}
@@ -368,8 +368,8 @@ func parseAnthropicSSE(data []byte) OutputLog {
 			if event.ContentBlock.Type == "tool_use" {
 				idx := len(accumTools)
 				accumTools[idx] = &ToolCall{
-					ID:   event.ContentBlock.ID,
-					Type: "function",
+					ID:       event.ContentBlock.ID,
+					Type:     "function",
 					Function: ToolFunc{Name: event.ContentBlock.Name},
 				}
 			}
