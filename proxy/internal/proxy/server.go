@@ -4,23 +4,19 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
-)
 
-// Backend maps one BACKENDS_MAP entry.
-type Backend struct {
-	Prefix string `json:"prefix"`
-	URL    string `json:"url"`
-}
+	"lazy-vllm-proxy/internal/config"
+)
 
 // Server holds the state for all HTTP handlers.
 type Server struct {
-	Backends []Backend
+	Backends []config.Backend
 	LevelVar *slog.LevelVar
 }
 
 // resolveBackend returns the upstream URL for a given model name.
 // If no prefix matches, falls back to the first backend.
-func resolveBackend(backends []Backend, model string) string {
+func resolveBackend(backends []config.Backend, model string) string {
 	for _, r := range backends {
 		if r.Prefix != "" && strings.HasPrefix(model, r.Prefix) {
 			return r.URL
@@ -33,7 +29,7 @@ func resolveBackend(backends []Backend, model string) string {
 }
 
 // uniqueURLs returns distinct backend URLs, preserving insertion order.
-func uniqueURLs(backends []Backend) []string {
+func uniqueURLs(backends []config.Backend) []string {
 	seen := make(map[string]struct{})
 	var urls []string
 	for _, r := range backends {

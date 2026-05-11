@@ -1,9 +1,13 @@
 package proxy
 
-import "testing"
+import (
+	"testing"
+
+	"lazy-vllm-proxy/internal/config"
+)
 
 func TestResolveBackend(t *testing.T) {
-	backends := []Backend{
+	backends := []config.Backend{
 		{Prefix: "gemma", URL: "http://localhost:8000"},
 		{Prefix: "qwen", URL: "http://localhost:8001"},
 		{Prefix: "llama", URL: "http://localhost:8002"},
@@ -32,7 +36,7 @@ func TestResolveBackend(t *testing.T) {
 }
 
 func TestResolveBackend_Fallback(t *testing.T) {
-	backends := []Backend{
+	backends := []config.Backend{
 		{Prefix: "gemma", URL: "http://localhost:8000"},
 	}
 	got := resolveBackend(backends, "anything")
@@ -51,12 +55,12 @@ func TestResolveBackend_Empty(t *testing.T) {
 func TestUniqueURLs(t *testing.T) {
 	tests := []struct {
 		name  string
-		input []Backend
+		input []config.Backend
 		want  []string
 	}{
 		{
 			name: "all unique",
-			input: []Backend{
+			input: []config.Backend{
 				{Prefix: "a", URL: "http://srv1"},
 				{Prefix: "b", URL: "http://srv2"},
 				{Prefix: "c", URL: "http://srv3"},
@@ -65,7 +69,7 @@ func TestUniqueURLs(t *testing.T) {
 		},
 		{
 			name: "duplicates",
-			input: []Backend{
+			input: []config.Backend{
 				{Prefix: "a", URL: "http://srv1"},
 				{Prefix: "b", URL: "http://srv2"},
 				{Prefix: "c", URL: "http://srv1"},

@@ -147,7 +147,7 @@ func (s *Server) HandleLogLevel(w http.ResponseWriter, r *http.Request) {
 		level = slog.LevelDebug
 	case "INFO":
 		level = slog.LevelInfo
-	case "WARN":
+	case "WARN", "WARNING":
 		level = slog.LevelWarn
 	case "ERROR":
 		level = slog.LevelError

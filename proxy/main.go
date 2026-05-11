@@ -23,14 +23,9 @@ func main() {
 
 	levelVar := &slog.LevelVar{}
 	levelVar.Set(config.ParseLogLevel(config.EnvOr("LOG_LEVEL", "INFO")))
-	// Convert config.Backend -> proxy.Backend
-	backends := make([]proxy.Backend, len(cfg.Backends))
-	for i, b := range cfg.Backends {
-		backends[i] = proxy.Backend{Prefix: b.Prefix, URL: b.URL}
-	}
 
 	s := &proxy.Server{
-		Backends: backends,
+		Backends: cfg.Backends,
 		LevelVar: levelVar,
 	}
 
