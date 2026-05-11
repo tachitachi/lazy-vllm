@@ -165,19 +165,46 @@ function renderToolCalls(toolCalls) {
 function renderMessage(msg) {
   const role = msg.role || 'unknown';
   const enableMarkdown = role !== 'tool';
+
+  let inner = '';
+  if (msg.reasoning) {
+    inner += `<div class="reasoning-block text-xs mt-1 mb-2">
+      <div class="text-indigo-400 text-xs font-semibold mb-1">Reasoning</div>
+      <div class="whitespace-pre-wrap break-words">${renderMarkdown(msg.reasoning, enableMarkdown)}</div>
+    </div>`;
+  }
+  inner += renderContent(msg.content, enableMarkdown);
+  inner += renderToolCalls(msg.tool_calls);
+  inner = inner.trim();
+
+  let preview = '';
+  if (inner) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = inner;
+    const text = (tmp.textContent || '').replace(/\s+/g, ' ').trim();
+    preview = text.slice(0, 250);
+    if (text.length > 250) preview += '…';
+  }
+
   let html = `<div class="mb-3 p-3 bg-gray-800/60 rounded border border-gray-700">`;
   html += `<div class="flex items-center gap-2 mb-1">${roleBadge(role)}`;
   if (msg.name) html += `<span class="text-xs text-gray-500 font-mono">${escHtml(msg.name)}</span>`;
   if (msg.tool_call_id) html += `<span class="text-xs text-gray-600 font-mono">id:${escHtml(msg.tool_call_id)}</span>`;
   html += `</div>`;
-  if (msg.reasoning) {
-    html += `<div class="reasoning-block text-xs mt-1 mb-2">
-      <div class="text-indigo-400 text-xs font-semibold mb-1">Reasoning</div>
-      <div class="whitespace-pre-wrap break-words">${renderMarkdown(msg.reasoning, enableMarkdown)}</div>
-    </div>`;
+
+  if (inner) {
+    const detailsId = `msg-${Math.random().toString(36).slice(2, 9)}`;
+    if (preview) {
+      html += `<details class="message-details" id="${detailsId}">`;
+      html += `<summary class="text-sm text-gray-300 font-mono bg-gray-800/40 rounded px-2 py-0.5 mb-2 select-none">${escHtml(preview)}</summary>`;
+      html += `<div>`;
+      html += inner;
+      html += `</div></details>`;
+    } else {
+      html += inner;
+    }
   }
-  html += renderContent(msg.content, enableMarkdown);
-  html += renderToolCalls(msg.tool_calls);
+
   html += `</div>`;
   return html;
 }
