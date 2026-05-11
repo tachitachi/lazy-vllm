@@ -17,6 +17,9 @@ import (
 // Run executes the graph for a single request. It walks nodes following edges
 // until it reaches a NodeKindRespond node, which writes the HTTP response.
 func (g *Graph) Run(ctx context.Context, pctx *PipelineCtx, w http.ResponseWriter) error {
+	if w == nil {
+		w = &nopResponseWriter{}
+	}
 	nodeID := g.Entry
 	for {
 		node, ok := g.Nodes[nodeID]
@@ -56,6 +59,9 @@ func (g *Graph) Run(ctx context.Context, pctx *PipelineCtx, w http.ResponseWrite
 
 		edge := g.findEdge(nodeID, output)
 		if edge == nil {
+			if node.Kind == NodeKindChain || node.Kind == NodeKindRoute {
+				return nil
+			}
 			return fmt.Errorf("graph: no edge from %q matched output %q", nodeID, output)
 		}
 		if edge.Transform != nil {

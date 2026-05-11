@@ -118,17 +118,15 @@ services:
   #     - MODEL_NAME=google/gemma-4-26B-A4B-it
   #   restart: always
 
-  agent-graph:
+  proxy:
     build:
-      context: ./agent
+      context: ./proxy
       dockerfile: Dockerfile
     ports:
       - "8002:8002"
     environment:
-      - BACKENDS_MAP=[{"prefix":"RedHatAI/Qwen3.6","url":"http://qwen36:8000"},{"prefix":"Qwen3.6","url":"http://qwen36:8000"},{"prefix":"Qwen3.6","url":"http://qwen36:8000"},{"prefix":"google","url":"http://gemma4:8000"},{"prefix":"RedHatAI/gemma","url":"http://gemma4:8000"},{"prefix":"gemma","url":"http://gemma4:8000"}]
+      - BACKENDS_MAP=[{"prefix":"RedHatAI/Qwen3.6","url":"http://qwen36:8000"},{"prefix":"Qwen3.6","url":"http://qwen36:8000"},{"prefix":"google","url":"http://gemma4:8000"},{"prefix":"RedHatAI/gemma","url":"http://gemma4:8000"},{"prefix":"gemma","url":"http://gemma4:8000"}]
       - PORT=8002
-      - ROUTER_WINDOW_SIZE=3
-      - MODEL_NAME=google/gemma-4-26B-A4B-it
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_DIR=/logs
     volumes:
@@ -140,7 +138,7 @@ services:
     ports:
       - "3000:8080"
     environment:
-      - OLLAMA_BASE_URL=http://agent-graph:8002/v1
+      - OLLAMA_BASE_URL=http://proxy:8002/v1
     volumes:
       - open-webui:/app/backend/data
     restart: always

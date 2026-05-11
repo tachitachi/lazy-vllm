@@ -4,8 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"net/http"
-
-	"agent-graph/internal/agent"
 )
 
 //go:embed ui/logs.html
@@ -23,7 +21,7 @@ func (s *server) handleLogsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if summaries == nil {
-		summaries = []agent.LogSummary{}
+		summaries = []LogSummary{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(summaries)
