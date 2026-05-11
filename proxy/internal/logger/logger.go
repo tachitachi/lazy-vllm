@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	"context"
@@ -39,27 +39,27 @@ type DiskLogger struct {
 	logDir string
 }
 
-func NewDiskLogger(logDir string) (*DiskLogger, error) {
+func New(logDir string) (*DiskLogger, error) {
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return nil, fmt.Errorf("disk logger: create log dir: %w", err)
+		return nil, fmt.Errorf("logger: create log dir: %w", err)
 	}
 	return &DiskLogger{logDir: logDir}, nil
 }
 
-var replayHeaders = []string{
+var capturedHeaders = []string{
 	"Authorization", "x-api-key", "Content-Type",
 	"anthropic-version", "anthropic-beta",
 }
 
 func (d *DiskLogger) Start(format, requestPath string, headers http.Header, body []byte) *RequestLog {
 	captured := make(map[string]string)
-	for _, h := range replayHeaders {
+	for _, h := range capturedHeaders {
 		if v := headers.Get(h); v != "" {
 			captured[h] = v
 		}
 	}
 	return &RequestLog{
-		ID:             newLogID(),
+		ID:             newID(),
 		StartedAt:      time.Now(),
 		Format:         format,
 		RequestPath:    requestPath,
@@ -78,7 +78,6 @@ func (d *DiskLogger) Save(reqLog *RequestLog) {
 	if err := os.MkdirAll(dateDir, 0755); err != nil {
 		return
 	}
-
 	data, err := json.MarshalIndent(reqLog, "", "  ")
 	if err != nil {
 		return
@@ -146,7 +145,7 @@ func (d *DiskLogger) GetLog(id string, days int) (*RequestLog, error) {
 	return nil, fmt.Errorf("log %q not found", id)
 }
 
-func newLogID() string {
+func newID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	b[6] = (b[6] & 0x0f) | 0x40
@@ -160,15 +159,15 @@ func newLogID() string {
 	)
 }
 
-type diskLoggerCtxKey int
+type ctxKey int
 
-const reqLogKey diskLoggerCtxKey = 0
+const reqLogKey ctxKey = 0
 
-func withReqLog(ctx context.Context, log *RequestLog) context.Context {
+func WithReqLog(ctx context.Context, log *RequestLog) context.Context {
 	return context.WithValue(ctx, reqLogKey, log)
 }
 
-func reqLogFromCtx(ctx context.Context) *RequestLog {
+func ReqLogFromCtx(ctx context.Context) *RequestLog {
 	log, _ := ctx.Value(reqLogKey).(*RequestLog)
 	return log
 }

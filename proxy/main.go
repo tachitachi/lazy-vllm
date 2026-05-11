@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"lazy-vllm-proxy/internal/logger"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -26,7 +28,7 @@ type backendRule struct {
 type server struct {
 	backends   []backendRule
 	levelVar   *slog.LevelVar
-	diskLogger *DiskLogger
+	diskLogger *logger.DiskLogger
 }
 
 func resolveBackend(backends []backendRule, model string) string {
@@ -100,7 +102,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if s.diskLogger != nil {
 		reqLog := s.diskLogger.Start("openai", r.URL.Path, r.Header, body)
-		ctx = withReqLog(ctx, reqLog)
+		ctx = logger.WithReqLog(ctx, reqLog)
 		defer s.diskLogger.Save(reqLog)
 	}
 
@@ -120,7 +122,7 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if s.diskLogger != nil {
 		reqLog := s.diskLogger.Start("anthropic", r.URL.Path, r.Header, body)
-		ctx = withReqLog(ctx, reqLog)
+		ctx = logger.WithReqLog(ctx, reqLog)
 		defer s.diskLogger.Save(reqLog)
 	}
 
@@ -240,10 +242,10 @@ func main() {
 
 	slog.Info("starting lazy-vllm-proxy", "port", port)
 
-	var diskLogger *DiskLogger
+	var diskLogger *logger.DiskLogger
 	if logDir := envOr("LOG_DIR", ""); logDir != "" {
 		var err error
-		diskLogger, err = NewDiskLogger(logDir)
+		diskLogger, err = logger.New(logDir)
 		if err != nil {
 			slog.Warn("disk logger init failed", "err", err)
 		} else {
@@ -262,9 +264,9 @@ func main() {
 	mux.HandleFunc("POST /v1/messages", s.handleMessages)
 	mux.HandleFunc("POST /log-level", s.handleLogLevel)
 	if diskLogger != nil {
-		mux.HandleFunc("GET /ui/logs", s.handleLogsUI)
-		mux.HandleFunc("GET /api/logs", s.handleLogsList)
-		mux.HandleFunc("GET /api/logs/{id}", s.handleLogDetail)
+		mux.HandleFunc("GET /ui/logs", diskLogger.HandleLogsUI)
+		mux.HandleFunc("GET /api/logs", diskLogger.HandleLogsList)
+		mux.HandleFunc("GET /api/logs/{id}", diskLogger.HandleLogDetail)
 	}
 	mux.HandleFunc("/", s.handleGenericProxy)
 

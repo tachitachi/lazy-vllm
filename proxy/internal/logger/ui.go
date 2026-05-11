@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
 	_ "embed"
@@ -9,13 +9,13 @@ import (
 //go:embed ui/logs.html
 var logsHTML []byte
 
-func (s *server) handleLogsUI(w http.ResponseWriter, r *http.Request) {
+func (d *DiskLogger) HandleLogsUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(logsHTML)
 }
 
-func (s *server) handleLogsList(w http.ResponseWriter, r *http.Request) {
-	summaries, err := s.diskLogger.ListLogs(7)
+func (d *DiskLogger) HandleLogsList(w http.ResponseWriter, r *http.Request) {
+	summaries, err := d.ListLogs(7)
 	if err != nil {
 		http.Error(w, "failed to list logs", http.StatusInternalServerError)
 		return
@@ -27,13 +27,13 @@ func (s *server) handleLogsList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(summaries)
 }
 
-func (s *server) handleLogDetail(w http.ResponseWriter, r *http.Request) {
+func (d *DiskLogger) HandleLogDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	log, err := s.diskLogger.GetLog(id, 7)
+	log, err := d.GetLog(id, 7)
 	if err != nil {
 		http.Error(w, "log not found", http.StatusNotFound)
 		return
