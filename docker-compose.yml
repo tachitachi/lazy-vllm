@@ -71,6 +71,8 @@ services:
       start_period: 600s
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
     deploy:
       resources:
         reservations:
@@ -101,6 +103,8 @@ services:
       # - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
+      - '--hf-overrides={"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - --max-model-len=1010000
     profiles:
       - qwen36
       - all
