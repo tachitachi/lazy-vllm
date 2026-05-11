@@ -84,3 +84,39 @@ func TestParseLogLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfig(t *testing.T) {
+	t.Run("missing BACKENDS_MAP", func(t *testing.T) {
+		_, err := config.LoadConfig()
+		if err == nil {
+			t.Error("expected error for missing BACKENDS_MAP")
+		}
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		t.Setenv("BACKENDS_MAP", "not-json")
+		_, err := config.LoadConfig()
+		if err == nil {
+			t.Error("expected error for invalid JSON")
+		}
+	})
+
+	t.Run("valid config", func(t *testing.T) {
+		t.Setenv("BACKENDS_MAP", `[{"prefix":"gpt-4","url":"http://localhost:8001"},{"prefix":"claude-","url":"http://localhost:8002"}]`)
+		t.Setenv("PORT", "9999")
+		t.Setenv("LOG_DIR", "/tmp/logs")
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.Backends) != 2 {
+			t.Errorf("expected 2 backends, got %d", len(cfg.Backends))
+		}
+		if cfg.Port != 9999 {
+			t.Errorf("Port = %d, want 9999", cfg.Port)
+		}
+		if cfg.LogDir != "/tmp/logs" {
+			t.Errorf("LogDir = %q, want /tmp/logs", cfg.LogDir)
+		}
+	})
+}

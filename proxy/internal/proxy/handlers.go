@@ -11,6 +11,12 @@ import (
 	"lazy-vllm-proxy/internal/logger"
 )
 
+// messageParser extracts input messages from a raw request body.
+type messageParser func(body []byte) []logger.Message
+
+// outputParser extracts the output log from a raw response body and streaming flag.
+type outputParser func(body []byte, streaming bool) logger.OutputLog
+
 func flushCopy(w http.ResponseWriter, r io.Reader) {
 	buf := make([]byte, 4096)
 	flusher, canFlush := w.(http.Flusher)
@@ -55,32 +61,25 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	flushCopy(w, resp.Body)
 }
 
-func (s *Server) HandleChatCompletions(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger) {
-	model := extractModel(body)
-	baseURL := resolveBackend(s.Backends, model)
-
-	var req struct {
-		Stream bool `json:"stream"`
-	}
-	json.Unmarshal(body, &req) //nolint:errcheck // malformed body → Stream=false is safe
-
-	if diskLogger == nil {
-		forwardRequest(r.Context(), w, r, baseURL, body)
-		return
-	}
-
-	reqLog := diskLogger.Start("openai", r.URL.Path, r.Header, body)
-	defer diskLogger.Save(reqLog)
-
-	rc := &responseCapture{ResponseWriter: w}
-	forwardRequest(r.Context(), rc, r, baseURL, body)
-	reqLog.SetCall(
-		logger.ParseMessages(body),
-		logger.ParseOpenAIOutput(rc.buf.Bytes(), req.Stream),
-	)
+func (s *Server) HandleChatCompletions(
+	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger,
+) {
+	s.forwardWithLogging(w, r, body, diskLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput)
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger) {
+	s.forwardWithLogging(w, r, body, diskLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput)
+}
+
+func (s *Server) forwardWithLogging(
+	w http.ResponseWriter,
+	r *http.Request,
+	body []byte,
+	diskLogger *logger.DiskLogger,
+	format string,
+	msgParser messageParser,
+	outParser outputParser,
+) {
 	model := extractModel(body)
 	baseURL := resolveBackend(s.Backends, model)
 
@@ -94,15 +93,12 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []b
 		return
 	}
 
-	reqLog := diskLogger.Start("anthropic", r.URL.Path, r.Header, body)
+	reqLog := diskLogger.Start(format, r.URL.Path, r.Header, body)
 	defer diskLogger.Save(reqLog)
 
 	rc := &responseCapture{ResponseWriter: w}
 	forwardRequest(r.Context(), rc, r, baseURL, body)
-	reqLog.SetCall(
-		logger.ParseAnthropicMessages(body),
-		logger.ParseAnthropicOutput(rc.buf.Bytes(), req.Stream),
-	)
+	reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
 }
 
 func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body []byte) {

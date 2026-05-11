@@ -258,9 +258,12 @@ data: [DONE]`)
 }
 
 func TestParseOpenAIOutput_SSE_ToolCalls(t *testing.T) {
-	body := []byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"foo"}}]}}]}
-data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"arg1"}}]}}]}
-data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"arg2"}}]}}]}`)
+	first := `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function",`
+	second := `"function":{"name":"foo"}}]}}]}`
+	body := []byte(first + second + "\ndata: " +
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"arg1"}}]}}]}` +
+		"\ndata: " +
+		`{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"arg2"}}]}}]}`)
 
 	out := ParseOpenAIOutput(body, true)
 	if len(out.ToolCalls) != 1 {

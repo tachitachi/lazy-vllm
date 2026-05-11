@@ -19,7 +19,12 @@ import (
 )
 
 func main() {
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		slog.Error("config", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("loaded backends", "rules", len(cfg.Backends))
 
 	levelVar := &slog.LevelVar{}
 	levelVar.Set(config.ParseLogLevel(config.EnvOr("LOG_LEVEL", "INFO")))
@@ -46,11 +51,19 @@ func main() {
 	})
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+		body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+		if err != nil {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
+		}
 		s.HandleChatCompletions(w, r, body, diskLogger)
 	})
 	mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+		body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+		if err != nil {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
+		}
 		s.HandleMessages(w, r, body, diskLogger)
 	})
 	mux.HandleFunc("GET /v1/models", s.HandleModels)
@@ -61,7 +74,11 @@ func main() {
 		mux.HandleFunc("GET /api/logs/{id}", diskLogger.HandleLogDetail)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+		body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
+		if err != nil {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
+		}
 		s.HandleGenericProxy(w, r, body)
 	})
 

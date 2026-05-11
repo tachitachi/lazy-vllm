@@ -231,7 +231,8 @@ func (d *DiskLogger) GetLog(id string, _ int) (*RequestLog, error) {
 	var log RequestLog
 	var startedMS, finishedMS int64
 	var headers, body, calls string
-	if err := row.Scan(&log.ID, &startedMS, &finishedMS, &log.DurationMS, &log.Format, &log.RequestPath, &headers, &body, &calls); err != nil {
+	if err := row.Scan(&log.ID, &startedMS, &finishedMS, &log.DurationMS,
+		&log.Format, &log.RequestPath, &headers, &body, &calls); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("log %q not found", id)
 		}
@@ -257,17 +258,4 @@ func newID() string {
 		hex.EncodeToString(b[8:10]),
 		hex.EncodeToString(b[10:16]),
 	)
-}
-
-type ctxKey int
-
-const reqLogKey ctxKey = 0
-
-func WithReqLog(ctx context.Context, log *RequestLog) context.Context {
-	return context.WithValue(ctx, reqLogKey, log)
-}
-
-func ReqLogFromCtx(ctx context.Context) *RequestLog {
-	log, _ := ctx.Value(reqLogKey).(*RequestLog)
-	return log
 }

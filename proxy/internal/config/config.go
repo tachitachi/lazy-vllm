@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -53,24 +54,21 @@ type Config struct {
 }
 
 // LoadConfig reads configuration from environment variables.
-// Exits if BACKENDS_MAP is not set or is invalid JSON.
-func LoadConfig() *Config {
+// Returns an error if BACKENDS_MAP is not set or is invalid JSON.
+func LoadConfig() (*Config, error) {
 	raw := EnvOr("BACKENDS_MAP", "")
 	if raw == "" {
-		slog.Error("BACKENDS_MAP is required")
-		os.Exit(1)
+		return nil, fmt.Errorf("BACKENDS_MAP is required")
 	}
 
 	var backends []Backend
 	if err := json.Unmarshal([]byte(raw), &backends); err != nil {
-		slog.Error("invalid BACKENDS_MAP", "err", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("invalid BACKENDS_MAP: %w", err)
 	}
-	slog.Info("loaded backends", "rules", len(backends))
 
 	return &Config{
 		Backends: backends,
 		Port:     EnvIntOr("PORT", 8002),
 		LogDir:   EnvOr("LOG_DIR", ""),
-	}
+	}, nil
 }
