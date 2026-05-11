@@ -1,0 +1,73 @@
+version: "2"
+
+linters:
+  # "standard" enables the linters golangci-lint considers stable and
+  # well-maintained: errcheck, govet, ineffassign, staticcheck, unused.
+  # Note: staticcheck in v2 subsumes gosimple (S1xxx checks) and
+  # simple (SA4xxx checks), so those are not listed separately.
+  default: standard
+
+  enable:
+    # --- HTTP safety --------------------------------------------------------
+    - bodyclose     # HTTP response bodies that are never closed (resource leak)
+    - noctx         # HTTP client calls missing a context.Context
+
+    # --- Error handling -----------------------------------------------------
+    - errorlint     # incorrect use of errors.Is / errors.As; missing %w in fmt.Errorf
+
+    # --- Code quality -------------------------------------------------------
+    - gocritic      # broad collection of opinionated but practical checks
+    - misspell      # typos in identifiers, comments, and string literals
+    - whitespace    # unnecessary blank lines at start/end of blocks and functions
+    - revive        # modernised drop-in replacement for the deprecated golint
+    - unparam       # function parameters that always receive the same value
+    - exhaustive    # check for exhaustive switch statements
+
+  settings:
+    errcheck:
+      exclude-functions:
+        # fmt.Print* errors are not actionable in a CLI context.
+        - fmt.Print
+        - fmt.Println
+        - fmt.Printf
+
+    gocritic:
+      disabled-checks:
+        - commentFormatting   # too noisy; comments vary intentionally
+        - hugeParam           # we pass large structs by value in some test helpers
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: exported           # exported symbols must have comments
+          disabled: true           # relaxed for a learning project
+        - name: unused-parameter
+          disabled: true           # covered by unparam with better output
+
+  exclusions:
+    rules:
+      # resp.Body.Close() is an io.ReadCloser interface call — errcheck can't
+      # exclude it via exclude-functions. The error is never actionable after
+      # the body has been read; this is a well-known false positive.
+      - text: 'Error return value of `resp\.Body\.Close` is not checked'
+        linters:
+          - errcheck
+
+      # Test files get more latitude — table-driven tests use patterns that
+      # trip up several linters legitimately.
+      - path: _test\.go
+        linters:
+          - gocritic
+          - unparam
+          - unused
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 10
+  max-same-issues: 5
