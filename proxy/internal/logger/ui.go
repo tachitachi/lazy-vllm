@@ -11,7 +11,7 @@ var logsHTML []byte
 
 func (d *DiskLogger) HandleLogsUI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(logsHTML)
+	_, _ = w.Write(logsHTML)
 }
 
 func (d *DiskLogger) HandleLogsList(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +24,7 @@ func (d *DiskLogger) HandleLogsList(w http.ResponseWriter, r *http.Request) {
 		summaries = []LogSummary{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(summaries)
+	_ = json.NewEncoder(w).Encode(summaries)
 }
 
 func (d *DiskLogger) HandleLogDetail(w http.ResponseWriter, r *http.Request) {
@@ -39,5 +39,5 @@ func (d *DiskLogger) HandleLogDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(log)
+	_ = json.NewEncoder(w).Encode(log)
 }

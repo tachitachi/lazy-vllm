@@ -12,7 +12,7 @@ func ParseMessages(body []byte) []Message {
 	var req struct {
 		Messages []Message `json:"messages"`
 	}
-	json.Unmarshal(body, &req)
+	json.Unmarshal(body, &req) //nolint:errcheck // body validated upstream
 	return req.Messages
 }
 

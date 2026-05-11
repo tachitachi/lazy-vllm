@@ -114,14 +114,16 @@ var migrations = [][]string{
 
 func migrate(db *sql.DB) error {
 	var version int
-	db.QueryRow(`PRAGMA user_version`).Scan(&version)
+	if err := db.QueryRowContext(context.Background(), `PRAGMA user_version`).Scan(&version); err != nil {
+		return err
+	}
 	for i := version; i < len(migrations); i++ {
 		for _, stmt := range migrations[i] {
-			if _, err := db.Exec(stmt); err != nil {
+			if _, err := db.ExecContext(context.Background(), stmt); err != nil {
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
-		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
+		if _, err := db.ExecContext(context.Background(), fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
 			return fmt.Errorf("migration %d: bump version: %w", i+1, err)
 		}
 	}
@@ -136,12 +138,12 @@ func New(logDir string) (*DiskLogger, error) {
 	if err != nil {
 		return nil, fmt.Errorf("logger: open sqlite: %w", err)
 	}
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
-		db.Close()
+	if _, err := db.ExecContext(context.Background(), `PRAGMA journal_mode=WAL`); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("logger: set WAL mode: %w", err)
 	}
 	if err := migrate(db); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("logger: %w", err)
 	}
 	return &DiskLogger{db: db}, nil
@@ -178,7 +180,7 @@ func (d *DiskLogger) Save(reqLog *RequestLog) {
 	headers, _ := json.Marshal(reqLog.RequestHeaders)
 	calls, _ := json.Marshal(reqLog.Calls)
 
-	d.db.Exec(
+	_, _ = d.db.ExecContext(context.Background(),
 		`INSERT OR REPLACE INTO requests
 			(id, started_at, finished_at, duration_ms, format, request_path, request_headers, request_body, calls)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -196,7 +198,7 @@ func (d *DiskLogger) Save(reqLog *RequestLog) {
 
 func (d *DiskLogger) ListLogs(days int) ([]LogSummary, error) {
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
-	rows, err := d.db.Query(
+	rows, err := d.db.QueryContext(context.Background(),
 		`SELECT id, started_at, finished_at, duration_ms, format, request_path
 		 FROM requests WHERE started_at >= ? ORDER BY started_at DESC`,
 		cutoff,
@@ -204,7 +206,7 @@ func (d *DiskLogger) ListLogs(days int) ([]LogSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // closed below
 
 	var summaries []LogSummary
 	for rows.Next() {
@@ -221,7 +223,7 @@ func (d *DiskLogger) ListLogs(days int) ([]LogSummary, error) {
 }
 
 func (d *DiskLogger) GetLog(id string, _ int) (*RequestLog, error) {
-	row := d.db.QueryRow(
+	row := d.db.QueryRowContext(context.Background(),
 		`SELECT id, started_at, finished_at, duration_ms, format, request_path, request_headers, request_body, calls
 		 FROM requests WHERE id = ?`,
 		id,
@@ -237,9 +239,9 @@ func (d *DiskLogger) GetLog(id string, _ int) (*RequestLog, error) {
 	}
 	log.StartedAt = time.UnixMilli(startedMS)
 	log.FinishedAt = time.UnixMilli(finishedMS)
-	json.Unmarshal([]byte(headers), &log.RequestHeaders)
+	_ = json.Unmarshal([]byte(headers), &log.RequestHeaders)
 	log.RequestBody = json.RawMessage(body)
-	json.Unmarshal([]byte(calls), &log.Calls)
+	_ = json.Unmarshal([]byte(calls), &log.Calls)
 	return &log, nil
 }
 

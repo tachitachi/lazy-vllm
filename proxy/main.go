@@ -88,5 +88,5 @@ func main() {
 	slog.Info("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	httpServer.Shutdown(ctx)
+	_ = httpServer.Shutdown(ctx)
 }

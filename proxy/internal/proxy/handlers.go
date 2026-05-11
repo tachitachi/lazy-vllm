@@ -17,7 +17,7 @@ func flushCopy(w http.ResponseWriter, r io.Reader) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			w.Write(buf[:n])
+			_, _ = w.Write(buf[:n])
 			if canFlush {
 				flusher.Flush()
 			}
@@ -62,7 +62,7 @@ func (s *Server) HandleChatCompletions(w http.ResponseWriter, r *http.Request, b
 	var req struct {
 		Stream bool `json:"stream"`
 	}
-	json.Unmarshal(body, &req)
+	json.Unmarshal(body, &req) //nolint:errcheck // malformed body → Stream=false is safe
 
 	if diskLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, body)
@@ -87,7 +87,7 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []b
 	var req struct {
 		Stream bool `json:"stream"`
 	}
-	json.Unmarshal(body, &req)
+	json.Unmarshal(body, &req) //nolint:errcheck // malformed body → Stream=false is safe
 
 	if diskLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, body)

@@ -98,6 +98,6 @@ func (s *Server) HandleModels(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: merged})
+	_ = json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: merged})
 	slog.Info("models aggregated", "total", len(merged), "backends", len(urls))
 }
