@@ -105,6 +105,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("BACKENDS_MAP", `[{"prefix":"gpt-4","url":"http://localhost:8001"},{"prefix":"claude-","url":"http://localhost:8002"}]`)
 		t.Setenv("PORT", "9999")
 		t.Setenv("LOG_DIR", "/tmp/logs")
+		t.Setenv("ROUTING_RULES", `[{"source_model":"qwen-35b","threshold":240000,"target_model":"qwen-35b-1m"}]`)
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -117,6 +118,15 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if cfg.LogDir != "/tmp/logs" {
 			t.Errorf("LogDir = %q, want /tmp/logs", cfg.LogDir)
+		}
+		if len(cfg.RoutingRules) != 1 {
+			t.Errorf("expected 1 routing rule, got %d", len(cfg.RoutingRules))
+		}
+		if cfg.RoutingRules[0].SourceModel != "qwen-35b" {
+			t.Errorf("SourceModel = %q, want %q", cfg.RoutingRules[0].SourceModel, "qwen-35b")
+		}
+		if cfg.RoutingRules[0].Threshold != 240000 {
+			t.Errorf("Threshold = %d, want 240000", cfg.RoutingRules[0].Threshold)
 		}
 	})
 }

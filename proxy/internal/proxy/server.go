@@ -9,8 +9,9 @@ import (
 
 // Server holds the state for all HTTP handlers.
 type Server struct {
-	Backends []config.Backend
-	LevelVar *slog.LevelVar
+	Backends     []config.Backend
+	RoutingRules []config.RouteRule
+	LevelVar     *slog.LevelVar
 }
 
 // resolveBackend returns the upstream URL for a given model name.

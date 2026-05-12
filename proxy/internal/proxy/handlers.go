@@ -88,6 +88,34 @@ func (s *Server) forwardWithLogging(
 	}
 	json.Unmarshal(body, &req) //nolint:errcheck // malformed body → Stream=false is safe
 
+	// Count tokens before forwarding.
+	var tokenCount int
+	if format == "openai" {
+		tokenCount = s.countOpenAITokens(baseURL, body)
+	} else {
+		tokenCount = s.countAnthropicTokens(baseURL, body)
+	}
+	if tokenCount > 0 {
+		slog.Info("token count", "tokens", tokenCount, "format", format)
+	}
+
+	// Apply routing rules based on token threshold.
+	targetModel := ""
+	for _, rule := range s.RoutingRules {
+		if model == rule.SourceModel && tokenCount >= rule.Threshold {
+			slog.Info("route override",
+				"from", model,
+				"to", rule.TargetModel,
+				"tokens", tokenCount,
+				"threshold", rule.Threshold)
+			targetModel = rule.TargetModel
+			break
+		}
+	}
+	if targetModel != "" {
+		baseURL = resolveBackend(s.Backends, targetModel)
+	}
+
 	if diskLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, body)
 		return
@@ -127,6 +155,44 @@ func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body
 	}
 	w.WriteHeader(resp.StatusCode)
 	flushCopy(w, resp.Body)
+}
+
+func (s *Server) countOpenAITokens(baseURL string, body []byte) int {
+	url := baseURL + "/tokenize"
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		slog.Warn("tokenize request failed", "err", err)
+		return 0
+	}
+	defer resp.Body.Close()
+
+	var raw struct {
+		Count int `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		slog.Warn("tokenize decode failed", "err", err)
+		return 0
+	}
+	return raw.Count
+}
+
+func (s *Server) countAnthropicTokens(baseURL string, body []byte) int {
+	url := baseURL + "/v1/messages/count_tokens"
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		slog.Warn("count_tokens request failed", "err", err)
+		return 0
+	}
+	defer resp.Body.Close()
+
+	var raw struct {
+		InputTokens int `json:"input_tokens"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		slog.Warn("count_tokens decode failed", "err", err)
+		return 0
+	}
+	return raw.InputTokens
 }
 
 func (s *Server) HandleLogLevel(w http.ResponseWriter, r *http.Request) {

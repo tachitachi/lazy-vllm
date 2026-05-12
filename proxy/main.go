@@ -24,14 +24,15 @@ func main() {
 		slog.Error("config", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("loaded backends", "rules", len(cfg.Backends))
+	slog.Info("loaded backends", "backends", len(cfg.Backends), "rules", len(cfg.RoutingRules))
 
 	levelVar := &slog.LevelVar{}
 	levelVar.Set(config.ParseLogLevel(config.EnvOr("LOG_LEVEL", "INFO")))
 
 	s := &proxy.Server{
-		Backends: cfg.Backends,
-		LevelVar: levelVar,
+		Backends:     cfg.Backends,
+		RoutingRules: cfg.RoutingRules,
+		LevelVar:     levelVar,
 	}
 
 	var diskLogger *logger.DiskLogger

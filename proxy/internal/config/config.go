@@ -46,11 +46,19 @@ type Backend struct {
 	URL  string `json:"url"`
 }
 
+// RouteRule maps one ROUTING_RULES entry.
+type RouteRule struct {
+	SourceModel string `json:"source_model"`
+	Threshold   int    `json:"threshold"`
+	TargetModel string `json:"target_model"`
+}
+
 // Config holds the proxy's configuration parsed from environment variables.
 type Config struct {
-	Backends []Backend
-	Port     int
-	LogDir   string
+	Backends     []Backend
+	RoutingRules []RouteRule
+	Port         int
+	LogDir       string
 }
 
 // LoadConfig reads configuration from environment variables.
@@ -66,9 +74,17 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid BACKENDS_MAP: %w", err)
 	}
 
+	var routingRules []RouteRule
+	if r := EnvOr("ROUTING_RULES", ""); r != "" {
+		if err := json.Unmarshal([]byte(r), &routingRules); err != nil {
+			return nil, fmt.Errorf("invalid ROUTING_RULES: %w", err)
+		}
+	}
+
 	return &Config{
-		Backends: backends,
-		Port:     EnvIntOr("PORT", 8002),
-		LogDir:   EnvOr("LOG_DIR", ""),
+		Backends:     backends,
+		RoutingRules: routingRules,
+		Port:         EnvIntOr("PORT", 8002),
+		LogDir:       EnvOr("LOG_DIR", ""),
 	}, nil
 }
