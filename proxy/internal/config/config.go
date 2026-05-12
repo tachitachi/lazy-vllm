@@ -42,8 +42,8 @@ func ParseLogLevel(s string) slog.Level {
 
 // Backend maps one BACKENDS_MAP entry.
 type Backend struct {
-	Prefix string `json:"prefix"`
-	URL    string `json:"url"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 // Config holds the proxy's configuration parsed from environment variables.

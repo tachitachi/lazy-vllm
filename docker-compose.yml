@@ -52,7 +52,6 @@ services:
       - --mm-processor-cache-gb=8
     profiles:
       - gemma4
-      - all
     depends_on:
       qwen36:
         condition: service_healthy
@@ -71,8 +70,6 @@ services:
       start_period: 600s
     volumes:
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    environment:
-      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
     deploy:
       resources:
         reservations:
@@ -97,17 +94,68 @@ services:
       - --tool-call-parser=qwen3_coder
       - --enable-prefix-caching
       - --enable-chunked-prefill
-      - --max-num-seqs=192
+      - --max-num-seqs=256
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"preserve_thinking": true, "enable_thinking": true}'
       # - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
-      - '--hf-overrides={"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
-      - --max-model-len=1010000
     profiles:
       - qwen36
       - all
+
+  qwen36-1m:
+    image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
+    ports:
+      - "8001:8000"
+    ipc: host
+    shm_size: '16g'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: always
+    command:
+      - --model=RedHatAI/Qwen3.6-35B-A3B-NVFP4
+      - --served-model-name
+      - RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M
+      - Qwen3.6-35B-A3B-NVFP4-1M
+      - --gpu-memory-utilization=0.40
+      - --kv-cache-dtype=fp8
+      - --host=0.0.0.0
+      - --port=8000
+      - --async-scheduling
+      - --enable-auto-tool-choice
+      - --reasoning-parser=qwen3
+      - --tool-call-parser=qwen3_coder
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --max-num-seqs=16
+      - --max-num-batched-tokens=32768
+      - '--default-chat-template-kwargs={"preserve_thinking": true, "enable_thinking": true}'
+      # - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
+      - --mm-processor-cache-type=lru
+      - '--hf-overrides={"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+      - --max-model-len=1010000
+    profiles:
+      - qwen36-1m
+      - all
+    depends_on:
+      qwen36:
+        condition: service_healthy
 
   # thinking-router:
   #   build:
@@ -129,7 +177,8 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - BACKENDS_MAP=[{"prefix":"RedHatAI/Qwen3.6","url":"http://qwen36:8000"},{"prefix":"Qwen3.6","url":"http://qwen36:8000"},{"prefix":"google","url":"http://gemma4:8000"},{"prefix":"RedHatAI/gemma","url":"http://gemma4:8000"},{"prefix":"gemma","url":"http://gemma4:8000"}]
+      - BACKENDS_MAP=[{"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000"},{"name":"Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000"},{"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000"},{"name":"Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000"}]
+      # - BACKENDS_MAP=[{"name":"RedHatAI/Qwen3.6","url":"http://qwen36:8000"},{"name":"Qwen3.6","url":"http://qwen36:8000"},{"name":"google","url":"http://gemma4:8000"},{"name":"RedHatAI/gemma","url":"http://gemma4:8000"},{"name":"gemma","url":"http://gemma4:8000"}]
       - PORT=8002
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_DIR=/logs

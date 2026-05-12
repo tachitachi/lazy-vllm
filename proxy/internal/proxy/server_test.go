@@ -8,19 +8,21 @@ import (
 
 func TestResolveBackend(t *testing.T) {
 	backends := []config.Backend{
-		{Prefix: "gemma", URL: "http://localhost:8000"},
-		{Prefix: "qwen", URL: "http://localhost:8001"},
-		{Prefix: "llama", URL: "http://localhost:8002"},
+		{Name: "gemma", URL: "http://localhost:8000"},
+		{Name: "qwen", URL: "http://localhost:8001"},
+		{Name: "llama", URL: "http://localhost:8002"},
 	}
 
 	tests := []struct {
 		model string
 		want  string
 	}{
-		{"gemma-3-4b", "http://localhost:8000"},
 		{"gemma", "http://localhost:8000"},
-		{"qwen-3-8b", "http://localhost:8001"},
-		{"llama-3-70b", "http://localhost:8002"},
+		{"qwen", "http://localhost:8001"},
+		{"llama", "http://localhost:8002"},
+		{"gemma-3-4b", "http://localhost:8000"},
+		{"qwen-3-8b", "http://localhost:8000"},
+		{"llama-3-70b", "http://localhost:8000"},
 		{"unknown-model", "http://localhost:8000"},
 		{"", "http://localhost:8000"},
 	}
@@ -35,13 +37,13 @@ func TestResolveBackend(t *testing.T) {
 	}
 }
 
-func TestResolveBackend_Fallback(t *testing.T) {
+func TestResolveBackend_Exact(t *testing.T) {
 	backends := []config.Backend{
-		{Prefix: "gemma", URL: "http://localhost:8000"},
+		{Name: "gemma", URL: "http://localhost:8000"},
 	}
-	got := resolveBackend(backends, "anything")
+	got := resolveBackend(backends, "gemma-2-4b")
 	if got != "http://localhost:8000" {
-		t.Errorf("resolveBackend(_) = %q, want first backend", got)
+		t.Errorf("resolveBackend(%q, %q) = %q, expected first backend fallback", "gemma-2-4b", "gemma", got)
 	}
 }
 
@@ -61,18 +63,18 @@ func TestUniqueURLs(t *testing.T) {
 		{
 			name: "all unique",
 			input: []config.Backend{
-				{Prefix: "a", URL: "http://srv1"},
-				{Prefix: "b", URL: "http://srv2"},
-				{Prefix: "c", URL: "http://srv3"},
+				{Name: "a", URL: "http://srv1"},
+				{Name: "b", URL: "http://srv2"},
+				{Name: "c", URL: "http://srv3"},
 			},
 			want: []string{"http://srv1", "http://srv2", "http://srv3"},
 		},
 		{
 			name: "duplicates",
 			input: []config.Backend{
-				{Prefix: "a", URL: "http://srv1"},
-				{Prefix: "b", URL: "http://srv2"},
-				{Prefix: "c", URL: "http://srv1"},
+				{Name: "a", URL: "http://srv1"},
+				{Name: "b", URL: "http://srv2"},
+				{Name: "c", URL: "http://srv1"},
 			},
 			want: []string{"http://srv1", "http://srv2"},
 		},

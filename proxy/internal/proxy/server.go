@@ -3,7 +3,6 @@ package proxy
 import (
 	"encoding/json"
 	"log/slog"
-	"strings"
 
 	"lazy-vllm-proxy/internal/config"
 )
@@ -15,10 +14,10 @@ type Server struct {
 }
 
 // resolveBackend returns the upstream URL for a given model name.
-// If no prefix matches, falls back to the first backend.
+// If no exact match is found, falls back to the first backend.
 func resolveBackend(backends []config.Backend, model string) string {
 	for _, r := range backends {
-		if r.Prefix != "" && strings.HasPrefix(model, r.Prefix) {
+		if r.Name == model {
 			return r.URL
 		}
 	}
