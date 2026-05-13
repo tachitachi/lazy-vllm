@@ -62,13 +62,13 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) HandleChatCompletions(
-	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger,
+	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger,
 ) {
-	s.forwardWithLogging(w, r, body, diskLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput)
+	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput)
 }
 
-func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger) {
-	s.forwardWithLogging(w, r, body, diskLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput)
+func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger) {
+	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput)
 }
 
 func (s *Server) forwardWithLogging(
@@ -76,6 +76,7 @@ func (s *Server) forwardWithLogging(
 	r *http.Request,
 	body []byte,
 	diskLogger *logger.DiskLogger,
+	compactLogger *logger.CompactLogger,
 	format string,
 	msgParser messageParser,
 	outParser outputParser,
@@ -116,17 +117,38 @@ func (s *Server) forwardWithLogging(
 		baseURL = resolveBackend(s.Backends, targetModel)
 	}
 
-	if diskLogger == nil {
+	if diskLogger == nil && compactLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, body)
 		return
 	}
 
-	reqLog := diskLogger.Start(format, r.URL.Path, r.Header, body)
-	defer diskLogger.Save(reqLog)
+	// Compact logging: extract tools, start session, store messages.
+	var sessionID string
+	var toolsHash string
+	if compactLogger != nil {
+		toolsBlob := logger.ExtractTools(body)
+		if len(toolsBlob) > 0 && string(toolsBlob) != "null" {
+			toolsHash = compactLogger.StoreTools(toolsBlob)
+		}
+		sessionID, _ = compactLogger.StartSession()
+
+		// Store the full messages array as one deduplicated message record.
+		msgs := msgParser(body)
+		msgBody, _ := json.Marshal(msgs)
+		compactLogger.StoreMessage(sessionID, "", string(msgBody), toolsHash)
+	}
+
+	var reqLog *logger.RequestLog
+	if diskLogger != nil {
+		reqLog = diskLogger.Start(format, r.URL.Path, r.Header, body)
+		defer diskLogger.Save(reqLog)
+	}
 
 	rc := &responseCapture{ResponseWriter: w}
 	forwardRequest(r.Context(), rc, r, baseURL, body)
-	reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
+	if reqLog != nil {
+		reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
+	}
 }
 
 func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -159,7 +181,13 @@ func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body
 
 func (s *Server) countOpenAITokens(baseURL string, body []byte) int {
 	url := baseURL + "/tokenize"
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		slog.Warn("tokenize build failed", "err", err)
+		return 0
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		slog.Warn("tokenize request failed", "err", err)
 		return 0
@@ -178,7 +206,13 @@ func (s *Server) countOpenAITokens(baseURL string, body []byte) int {
 
 func (s *Server) countAnthropicTokens(baseURL string, body []byte) int {
 	url := baseURL + "/v1/messages/count_tokens"
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		slog.Warn("count_tokens build failed", "err", err)
+		return 0
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		slog.Warn("count_tokens request failed", "err", err)
 		return 0

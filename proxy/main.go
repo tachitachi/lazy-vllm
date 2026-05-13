@@ -36,6 +36,7 @@ func main() {
 	}
 
 	var diskLogger *logger.DiskLogger
+	var compactLogger *logger.CompactLogger
 	if cfg.LogDir != "" {
 		var err error
 		diskLogger, err = logger.New(cfg.LogDir)
@@ -43,6 +44,13 @@ func main() {
 			slog.Warn("disk logger init failed", "err", err)
 		} else {
 			slog.Info("disk logging enabled", "log_dir", cfg.LogDir)
+		}
+
+		compactLogger, err = logger.NewCompact(cfg.LogDir)
+		if err != nil {
+			slog.Warn("compact logger init failed", "err", err)
+		} else {
+			slog.Info("compact logging enabled", "log_dir", cfg.LogDir)
 		}
 	}
 
@@ -57,7 +65,7 @@ func main() {
 			http.Error(w, "failed to read request body", http.StatusBadRequest)
 			return
 		}
-		s.HandleChatCompletions(w, r, body, diskLogger)
+		s.HandleChatCompletions(w, r, body, diskLogger, compactLogger)
 	})
 	mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))
@@ -65,7 +73,7 @@ func main() {
 			http.Error(w, "failed to read request body", http.StatusBadRequest)
 			return
 		}
-		s.HandleMessages(w, r, body, diskLogger)
+		s.HandleMessages(w, r, body, diskLogger, compactLogger)
 	})
 	mux.HandleFunc("GET /v1/models", s.HandleModels)
 	mux.HandleFunc("POST /log-level", s.HandleLogLevel)
@@ -73,6 +81,10 @@ func main() {
 		mux.HandleFunc("GET /ui/logs", diskLogger.HandleLogsUI)
 		mux.HandleFunc("GET /api/logs", diskLogger.HandleLogsList)
 		mux.HandleFunc("GET /api/logs/{id}", diskLogger.HandleLogDetail)
+	}
+	if compactLogger != nil {
+		mux.HandleFunc("GET /api/sessions", compactLogger.HandleSessionsList)
+		mux.HandleFunc("GET /api/sessions/{id}", compactLogger.HandleSessionDetail)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))

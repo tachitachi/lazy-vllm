@@ -42,6 +42,11 @@
       <span id="status-dot" class="w-2 h-2 rounded-full bg-gray-500"></span>
     </div>
     <div class="flex items-center gap-3">
+      <!-- View Toggle -->
+      <div class="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-600">
+        <button id="view-logs" class="px-3 py-1.5 text-sm rounded-md transition-colors bg-indigo-600 text-white" onclick="switchView('logs')">Logs</button>
+        <button id="view-sessions" class="px-3 py-1.5 text-sm rounded-md transition-colors text-gray-400 hover:text-gray-200" onclick="switchView('sessions')">Sessions</button>
+      </div>
       <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
         <input type="checkbox" id="auto-refresh" class="accent-indigo-500"> Auto-refresh
       </label>
@@ -54,15 +59,15 @@
   <!-- Main -->
   <main class="flex flex-1 min-h-0">
 
-    <!-- Left: request list -->
+    <!-- Left: list -->
     <aside class="w-72 shrink-0 border-r border-gray-700 bg-gray-900 flex flex-col">
-      <div class="px-3 py-2 text-xs text-gray-500 border-b border-gray-700 font-medium uppercase tracking-wide">Requests</div>
+      <div class="px-3 py-2 text-xs text-gray-500 border-b border-gray-700 font-medium uppercase tracking-wide" id="list-header">Requests</div>
       <div id="request-list" class="overflow-y-auto flex-1"></div>
     </aside>
 
     <!-- Right: detail -->
     <section class="flex-1 overflow-y-auto p-6 bg-gray-950" id="detail-panel">
-      <div class="text-gray-500 text-center mt-32 text-sm">Select a request from the list to inspect it.</div>
+      <div class="text-gray-500 text-center mt-32 text-sm">Select an item from the list to inspect it.</div>
     </section>
 
   </main>
@@ -70,7 +75,9 @@
 <script>
 let selectedId = null;
 let allLogs = [];
+let allSessions = [];
 let refreshTimer = null;
+let currentView = 'logs';
 
 // ── Markdown renderer ────────────────────────────────────────
 
@@ -93,17 +100,57 @@ function renderMarkdown(text) {
   return _renderMarkdownFn(text);
 }
 
-// ── Fetch helpers ────────────────────────────────────────────
+// ── View switching ───────────────────────────────────────────
 
-async function fetchList() {
+function switchView(view) {
+  currentView = view;
+  const logsBtn = document.getElementById('view-logs');
+  const sessionsBtn = document.getElementById('view-sessions');
+  const listHeader = document.getElementById('list-header');
+
+  if (view === 'logs') {
+    logsBtn.className = 'px-3 py-1.5 text-sm rounded-md transition-colors bg-indigo-600 text-white';
+    sessionsBtn.className = 'px-3 py-1.5 text-sm rounded-md transition-colors text-gray-400 hover:text-gray-200';
+    listHeader.textContent = 'Requests';
+  } else {
+    sessionsBtn.className = 'px-3 py-1.5 text-sm rounded-md transition-colors bg-indigo-600 text-white';
+    logsBtn.className = 'px-3 py-1.5 text-sm rounded-md transition-colors text-gray-400 hover:text-gray-200';
+    listHeader.textContent = 'Sessions';
+  }
+
+  selectedId = null;
+  if (view === 'logs') {
+    loadLogsList();
+  } else {
+    loadSessionsList();
+  }
+}
+
+// ── Fetch helpers (old logs) ─────────────────────────────────
+
+async function fetchLogsList() {
   const res = await fetch('/api/logs');
-  if (!res.ok) throw new Error('fetch list failed');
+  if (!res.ok) throw new Error('fetch logs list failed');
   return res.json();
 }
 
-async function fetchDetail(id) {
+async function fetchLogsDetail(id) {
   const res = await fetch(`/api/logs/${id}`);
-  if (!res.ok) throw new Error('fetch detail failed');
+  if (!res.ok) throw new Error('fetch logs detail failed');
+  return res.json();
+}
+
+// ── Fetch helpers (new sessions) ─────────────────────────────
+
+async function fetchSessionsList() {
+  const res = await fetch('/api/sessions');
+  if (!res.ok) throw new Error('fetch sessions list failed');
+  return res.json();
+}
+
+async function fetchSessionDetail(id) {
+  const res = await fetch(`/api/sessions/${id}`);
+  if (!res.ok) throw new Error('fetch session detail failed');
   return res.json();
 }
 
@@ -135,7 +182,6 @@ function renderContent(content, enableMarkdown) {
     const renderedContent = enableMarkdown === true ? renderMarkdown(escHtml(content)) : escHtml(content);
     return `<div class="md-content whitespace-pre-wrap test-foo">${renderedContent}</div>`;
   }
-  // array of ContentBlocks
   if (Array.isArray(content)) {
     return content.map(b => {
       if (b.type === 'text') {
@@ -246,7 +292,9 @@ function buildCurlCommand(log) {
   return parts.join(' \\\n');
 }
 
-function renderDetail(log) {
+// ── Old Log Detail ───────────────────────────────────────────
+
+function renderLogDetail(log) {
   const curlCmd = buildCurlCommand(log);
 
   let html = `
@@ -317,7 +365,58 @@ function renderDetail(log) {
   return html;
 }
 
-function renderList(logs) {
+// ── New Session Detail ───────────────────────────────────────
+
+function renderSessionDetail(msgs) {
+  if (!msgs || msgs.length === 0) {
+    return '<div class="text-gray-500 text-center mt-32 text-sm">No messages in this session.</div>';
+  }
+
+  let html = `<div class="mb-6">
+    <div class="flex flex-wrap items-center gap-3 mb-2">
+      <span class="font-mono text-xs text-gray-500">${escHtml(msgs[0].hash)}</span>
+      <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 border border-emerald-700">compact</span>
+      <span class="text-xs text-gray-400">${fmtDate(msgs[0].created_at)}</span>
+      <span class="text-xs text-gray-500">${msgs.length} message(s)</span>
+    </div>
+  </div>`;
+
+  html += `<div class="space-y-2">`;
+
+  msgs.forEach((msg, i) => {
+    // Parse the body — it's a JSON array of messages
+    let parsed = [];
+    try {
+      parsed = JSON.parse(msg.body);
+    } catch {
+      parsed = [];
+    }
+
+    const toolsLabel = msg.tools_hash
+      ? `<span class="text-xs text-amber-400">⚙ tools: ${escHtml(msg.tools_hash.slice(0, 8))}…</span>`
+      : '';
+
+    html += `
+      <div class="bg-gray-900 rounded border border-gray-700">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
+          <span class="text-xs font-semibold text-gray-400">#${i+1}</span>
+          <span class="font-mono text-xs text-gray-500">${escHtml(msg.hash.slice(0, 12))}…</span>
+          ${toolsLabel}
+          <span class="ml-auto text-xs text-gray-600">${fmtTime(msg.created_at)}</span>
+        </div>
+        <div class="px-4 pb-4 pt-2">
+          ${parsed.map(renderMessage).join('') || '<span class="text-gray-600 text-xs">parse error</span>'}
+        </div>
+      </div>`;
+  });
+
+  html += `</div>`;
+  return html;
+}
+
+// ── List Rendering ──────────────────────────────────────────
+
+function renderLogsList(logs) {
   if (logs.length === 0) {
     return `<div class="p-4 text-xs text-gray-600 text-center">No logs yet.</div>`;
   }
@@ -329,7 +428,7 @@ function renderList(logs) {
       : '<span class="text-xs text-cyan-400">openai</span>';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
-           onclick="selectLog('${escHtml(log.id)}')">
+           onclick="selectLogsLog('${escHtml(log.id)}')">
         <div class="flex items-center justify-between">
           ${fmtBadge}
           <span class="text-xs text-gray-500">${fmtDuration(log.duration_ms)}</span>
@@ -340,29 +439,75 @@ function renderList(logs) {
   }).join('');
 }
 
-// ── Actions ──────────────────────────────────────────────────
+function renderSessionsList(sessions) {
+  if (sessions.length === 0) {
+    return `<div class="p-4 text-xs text-gray-600 text-center">No sessions yet.</div>`;
+  }
+  return sessions.map(s => {
+    const isSelected = s.id === selectedId;
+    const sel = isSelected ? 'bg-indigo-900/40 border-indigo-500' : 'border-transparent hover:bg-gray-800/50';
+    return `
+      <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
+           onclick="selectSession('${escHtml(s.id)}')">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-emerald-400">session</span>
+          <span class="text-xs text-gray-500">${s.message_count} msg(s)</span>
+        </div>
+        <div class="text-xs text-gray-400 mt-0.5">${fmtTime(s.created_at)}</div>
+        <div class="text-xs text-gray-600 mt-0.5 font-mono">${escHtml(s.id.slice(0,8))}…</div>
+      </div>`;
+  }).join('');
+}
 
-async function loadList() {
+// ── Actions (old logs) ─────────────────────────────────────
+
+async function loadLogsList() {
   try {
-    allLogs = await fetchList();
-    document.getElementById('request-list').innerHTML = renderList(allLogs);
+    allLogs = await fetchLogsList();
+    document.getElementById('request-list').innerHTML = renderLogsList(allLogs);
     setStatus(true);
   } catch (e) {
     setStatus(false);
   }
 }
 
-async function selectLog(id) {
+async function selectLogsLog(id) {
   selectedId = id;
-  document.getElementById('request-list').innerHTML = renderList(allLogs);
+  document.getElementById('request-list').innerHTML = renderLogsList(allLogs);
   document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
   try {
-    const log = await fetchDetail(id);
-    document.getElementById('detail-panel').innerHTML = renderDetail(log);
+    const log = await fetchLogsDetail(id);
+    document.getElementById('detail-panel').innerHTML = renderLogDetail(log);
   } catch (e) {
     document.getElementById('detail-panel').innerHTML = '<div class="text-red-400 text-sm text-center mt-32">Failed to load log.</div>';
   }
 }
+
+// ── Actions (new sessions) ───────────────────────────────────
+
+async function loadSessionsList() {
+  try {
+    allSessions = await fetchSessionsList();
+    document.getElementById('request-list').innerHTML = renderSessionsList(allSessions);
+    setStatus(true);
+  } catch (e) {
+    setStatus(false);
+  }
+}
+
+async function selectSession(id) {
+  selectedId = id;
+  document.getElementById('request-list').innerHTML = renderSessionsList(allSessions);
+  document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
+  try {
+    const msgs = await fetchSessionDetail(id);
+    document.getElementById('detail-panel').innerHTML = renderSessionDetail(msgs);
+  } catch (e) {
+    document.getElementById('detail-panel').innerHTML = '<div class="text-red-400 text-sm text-center mt-32">Failed to load session.</div>';
+  }
+}
+
+// ── Clipboard ───────────────────────────────────────────────
 
 function copyToClipboard(btn, elementId) {
   const text = document.getElementById(elementId)?.textContent || '';
@@ -394,6 +539,8 @@ function copyToClipboard(btn, elementId) {
   }).catch(err => console.error('Copy failed:', err));
 }
 
+// ── Status & Refresh ─────────────────────────────────────────
+
 function setStatus(ok) {
   const dot = document.getElementById('status-dot');
   dot.className = `w-2 h-2 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`;
@@ -403,7 +550,13 @@ function setupAutoRefresh() {
   const cb = document.getElementById('auto-refresh');
   cb.addEventListener('change', () => {
     if (cb.checked) {
-      refreshTimer = setInterval(loadList, 5000);
+      refreshTimer = setInterval(() => {
+        if (currentView === 'logs') {
+          loadLogsList();
+        } else {
+          loadSessionsList();
+        }
+      }, 5000);
     } else {
       clearInterval(refreshTimer);
       refreshTimer = null;
@@ -427,9 +580,16 @@ function escAttr(s) {
 
 // ── Init ─────────────────────────────────────────────────────
 
-document.getElementById('refresh-btn').addEventListener('click', loadList);
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  if (currentView === 'logs') {
+    loadLogsList();
+  } else {
+    loadSessionsList();
+  }
+});
+
 setupAutoRefresh();
-loadList();
+loadLogsList();
 </script>
 </body>
 </html>

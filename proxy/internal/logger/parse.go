@@ -7,6 +7,26 @@ import (
 	"strings"
 )
 
+// ExtractTools extracts the "tools" array from a request body (OpenAI or Anthropic format).
+// Both APIs use the same top-level key "tools". Returns canonical (minified) JSON,
+// or [] if no tools are present.
+func ExtractTools(body []byte) []byte {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return []byte("null")
+	}
+	if v, ok := raw["tools"]; ok {
+		var tools []json.RawMessage
+		if err := json.Unmarshal(v, &tools); err != nil {
+			return []byte("null")
+		}
+		// Canonicalize: re-marshal to remove whitespace/key-order differences.
+		canonical, _ := json.Marshal(tools)
+		return canonical
+	}
+	return []byte("null")
+}
+
 // ParseMessages extracts the messages array from an OpenAI-format request body.
 func ParseMessages(body []byte) []Message {
 	var req struct {
