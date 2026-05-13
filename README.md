@@ -14,6 +14,9 @@ The core philosophy of Lazy-vLLM is to avoid using expensive reasoning capabilit
     - Supports both OpenAI `/v1/chat/completions` and Anthropic `/v1/messages` API formats.
     - Strips prior thinking blocks from message history per Gemma 4's multi-turn requirements.
 - **Lazy-vLLM Proxy (Go)**: A lightweight reverse proxy that routes requests to upstream vLLM instances by model name prefix, captures logs to disk (SQLite), and provides a web UI for observability ([details](proxy/README.md)).
+    - **Flash models**: Every model automatically gets a `-FLASH` variant that disables thinking for instant responses.
+    - **Compact logging**: O(n) storage via global message deduplication and per-session tool tracking.
+    - **Token-based routing**: Automatically route large requests to different backends based on token thresholds.
 - **Agent Graph Framework (Go)**: A general-purpose agent execution engine (see [Agent Graph Framework](#-agent-graph-framework) below).
 - **vLLM (Gemma 4 Engine)**: The high-throughput inference backend running `google/gemma-4-26B-A4B-it`.
 - **Open-WebUI**: A feature-rich, user-friendly web interface for interacting with the LLM.
@@ -337,7 +340,7 @@ The included Grafana dashboards allow you to monitor:
 ├── opencode/                  # Opencode service implementation
 ├── prometheus/                # Prometheus configuration
 ├── grafana/                   # Grafana provisioning and dashboards
-├── proxy/                     # Lazy-vLLM Proxy (Go, port 8002)
+├── proxy/                     # Lazy-vLLM Proxy (Go, port 8002) — flash models, compact logging, token routing
 ├── router/                    # Thinking-Router (Go, port 8001)
 ├── agent/                     # Agent Graph Framework (Go)
 └── synthetic-ui/              # Synthetic UI for data labeling
