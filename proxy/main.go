@@ -85,6 +85,7 @@ func main() {
 	if compactLogger != nil {
 		mux.HandleFunc("GET /api/sessions", compactLogger.HandleSessionsList)
 		mux.HandleFunc("GET /api/sessions/{id}", compactLogger.HandleSessionDetail)
+		mux.HandleFunc("GET /api/tools/{hash}", compactLogger.HandleToolsDetail)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(io.LimitReader(r.Body, 32<<20))

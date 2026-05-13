@@ -18,33 +18,6 @@ func newTestLogger(t *testing.T) *CompactLogger {
 	return l
 }
 
-func TestComputeMessageHash_Deterministic(t *testing.T) {
-	h1 := messageHash("s1", "prev", "body", "")
-	h2 := messageHash("s1", "prev", "body", "")
-	if h1 != h2 {
-		t.Errorf("same input produced different hashes: %q vs %q", h1, h2)
-	}
-	if len(h1) == 0 {
-		t.Error("hash should not be empty")
-	}
-}
-
-func TestComputeMessageHash_DifferentSession(t *testing.T) {
-	h1 := messageHash("s1", "prev", "body", "")
-	h2 := messageHash("s2", "prev", "body", "")
-	if h1 == h2 {
-		t.Error("different sessions should produce different hashes")
-	}
-}
-
-func TestComputeMessageHash_DifferentBody(t *testing.T) {
-	h1 := messageHash("s1", "prev", "body-a", "")
-	h2 := messageHash("s1", "prev", "body-b", "")
-	if h1 == h2 {
-		t.Error("different bodies should produce different hashes")
-	}
-}
-
 func TestToolsHash_Deterministic(t *testing.T) {
 	tools := []byte(`[{"type":"function","function":{"name":"weather"}}]`)
 	h1 := toolsHash(tools)
@@ -57,9 +30,7 @@ func TestToolsHash_Deterministic(t *testing.T) {
 func TestToolsHash_DifferentContent(t *testing.T) {
 	toolsA := []byte(`[{"type":"function","function":{"name":"weather"}}]`)
 	toolsB := []byte(`[{"type":"function","function":{"name":"search"}}]`)
-	h1 := toolsHash(toolsA)
-	h2 := toolsHash(toolsB)
-	if h1 == h2 {
+	if toolsHash(toolsA) == toolsHash(toolsB) {
 		t.Error("different tools should produce different hashes")
 	}
 }
@@ -68,7 +39,6 @@ func TestStoreTools_Deduplication(t *testing.T) {
 	l := newTestLogger(t)
 
 	tools := []byte(`[{"type":"function","function":{"name":"weather"}}]`)
-
 	hash1 := l.StoreTools(tools)
 	hash2 := l.StoreTools(tools)
 	if hash1 != hash2 {
@@ -84,53 +54,34 @@ func TestStoreTools_Deduplication(t *testing.T) {
 	}
 }
 
-func TestStoreMessage_Chain(t *testing.T) {
-	l := newTestLogger(t)
+func TestBodyHash_Deterministic(t *testing.T) {
+	body := `{"role":"user","content":"hello"}`
+	h1 := bodyHash(body)
+	h2 := bodyHash(body)
+	if h1 != h2 {
+		t.Errorf("same input produced different hashes: %q vs %q", h1, h2)
+	}
+	if len(h1) == 0 {
+		t.Error("hash should not be empty")
+	}
+}
 
-	sessionID, err := l.StartSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	msg1Body := `{"role":"user","content":"hello"}`
-	msg2Body := `{"role":"assistant","content":"hi there"}`
-	msg3Body := `{"role":"user","content":"how are you"}`
-
-	msg1 := l.StoreMessage(sessionID, "", msg1Body, "")
-	if msg1 == nil {
-		t.Fatal("StoreMessage returned nil for msg1")
-	}
-	msg2 := l.StoreMessage(sessionID, msg1.Hash, msg2Body, "")
-	if msg2 == nil {
-		t.Fatal("StoreMessage returned nil for msg2")
-	}
-	msg3 := l.StoreMessage(sessionID, msg2.Hash, msg3Body, "")
-	if msg3 == nil {
-		t.Fatal("StoreMessage returned nil for msg3")
-	}
-
-	if msg1.PrevHash != nil {
-		t.Error("first message should have nil prev_hash")
-	}
-	if msg2.PrevHash == nil || *msg2.PrevHash != msg1.Hash {
-		t.Error("second message should link to first")
-	}
-	if msg3.PrevHash == nil || *msg3.PrevHash != msg2.Hash {
-		t.Error("third message should link to second")
+func TestBodyHash_DifferentBody(t *testing.T) {
+	a := `{"role":"user","content":"hello"}`
+	b := `{"role":"user","content":"world"}`
+	if bodyHash(a) == bodyHash(b) {
+		t.Error("different bodies should produce different hashes")
 	}
 }
 
 func TestStoreMessage_Deduplication(t *testing.T) {
 	l := newTestLogger(t)
 
-	sessionID, _ := l.StartSession()
 	body := `{"role":"user","content":"hello"}`
-
-	msg1 := l.StoreMessage(sessionID, "", body, "")
-	msg2 := l.StoreMessage(sessionID, "", body, "")
-
-	if msg1.Hash != msg2.Hash {
-		t.Error("same message should produce same hash")
+	h1 := l.StoreMessage(body)
+	h2 := l.StoreMessage(body)
+	if h1 != h2 {
+		t.Error("same message should return same hash")
 	}
 
 	var count int
@@ -142,46 +93,104 @@ func TestStoreMessage_Deduplication(t *testing.T) {
 	}
 }
 
-func TestGetSession_Reconstruction(t *testing.T) {
-	l := newTestLogger(t)
-
-	sessionID, _ := l.StartSession()
-
-	l.StoreMessage(sessionID, "", `{"role":"user","content":"hello"}`, "")
-	l.StoreMessage(sessionID, "prev1", `{"role":"assistant","content":"hi"}`, "")
-	l.StoreMessage(sessionID, "prev2", `{"role":"user","content":"how are you"}`, "")
-
-	msgs, err := l.GetSession(sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(msgs) != 3 {
-		t.Fatalf("expected 3 messages, got %d", len(msgs))
-	}
-}
-
-func TestCrossSessionIsolation(t *testing.T) {
+func TestStoreMessage_GlobalDedup(t *testing.T) {
 	l := newTestLogger(t)
 
 	body := `{"role":"user","content":"hello"}`
+	h1 := l.StoreMessage(body)
+	h2 := l.StoreMessage(body)
+	// Both calls return the same hash — same message stored once.
+	if h1 != h2 {
+		t.Error("global dedup failed")
+	}
 
-	id1, _ := l.StartSession()
-	id2, _ := l.StartSession()
+	// Two different messages → two rows
+	body2 := `{"role":"assistant","content":"hi"}`
+	h3 := l.StoreMessage(body2)
+	if h1 == h3 {
+		t.Error("different messages should produce different hashes")
+	}
 
-	msg1 := l.StoreMessage(id1, "", body, "")
-	msg2 := l.StoreMessage(id2, "", body, "")
+	var count int
+	if err := l.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM messages").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Errorf("expected 2 message rows, got %d", count)
+	}
+}
 
-	if msg1.Hash == msg2.Hash {
-		t.Error("same body in different sessions should produce different hashes")
+func TestSessionWithMessages(t *testing.T) {
+	l := newTestLogger(t)
+
+	tools := []byte(`[{"type":"function","function":{"name":"calc"}}]`)
+	toolsHash := l.StoreTools(tools)
+	sessionID, err := l.StartSession(toolsHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Store messages
+	msg1Hash := l.StoreMessage(`{"role":"user","content":"hello"}`)
+	msg2Hash := l.StoreMessage(`{"role":"assistant","content":"hi"}`)
+	if msg1Hash == "" || msg2Hash == "" {
+		t.Fatal("StoreMessage returned empty hash")
+	}
+
+	// Add to session
+	if err := l.AddMessageToSession(sessionID, msg1Hash); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.AddMessageToSession(sessionID, msg2Hash); err != nil {
+		t.Fatal(err)
+	}
+
+	// Retrieve session
+	session, msgs, err := l.GetSession(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Body != `{"role":"user","content":"hello"}` {
+		t.Errorf("msg1 body mismatch: %q", msgs[0].Body)
+	}
+	if msgs[1].Body != `{"role":"assistant","content":"hi"}` {
+		t.Errorf("msg2 body mismatch: %q", msgs[1].Body)
+	}
+	if session.ToolsHash == nil || *session.ToolsHash != toolsHash {
+		t.Error("tools hash should be set on session")
+	}
+}
+
+func TestMessageCrossSessionDedup(t *testing.T) {
+	l := newTestLogger(t)
+
+	body := `{"role":"user","content":"hello"}`
+	h := l.StoreMessage(body)
+
+	// Same message in two sessions → same hash (global dedup)
+	h2 := l.StoreMessage(body)
+	if h != h2 {
+		t.Error("same body should produce same hash across sessions")
+	}
+
+	var count int
+	if err := l.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM messages").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("global dedup: expected 1 message row, got %d", count)
 	}
 }
 
 func TestListSessions(t *testing.T) {
 	l := newTestLogger(t)
 
-	_, _ = l.StartSession()
-	_, _ = l.StartSession()
-	_, _ = l.StartSession()
+	_, _ = l.StartSession("")
+	_, _ = l.StartSession("")
+	_, _ = l.StartSession("")
 
 	sessions, err := l.ListSessions(7)
 	if err != nil {

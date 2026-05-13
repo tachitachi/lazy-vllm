@@ -367,51 +367,76 @@ function renderLogDetail(log) {
 
 // ── New Session Detail ───────────────────────────────────────
 
-function renderSessionDetail(msgs) {
-  if (!msgs || msgs.length === 0) {
-    return '<div class="text-gray-500 text-center mt-32 text-sm">No messages in this session.</div>';
+function renderSessionDetail(session, msgs) {
+  if (!session) {
+    return '<div class="text-gray-500 text-center mt-32 text-sm">No session data.</div>';
   }
 
+  const toolsHash = session.tools_hash;
   let html = `<div class="mb-6">
     <div class="flex flex-wrap items-center gap-3 mb-2">
-      <span class="font-mono text-xs text-gray-500">${escHtml(msgs[0].hash)}</span>
+      <span class="font-mono text-xs text-gray-500">${escHtml(session.id)}</span>
       <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 border border-emerald-700">compact</span>
-      <span class="text-xs text-gray-400">${fmtDate(msgs[0].created_at)}</span>
-      <span class="text-xs text-gray-500">${msgs.length} message(s)</span>
-    </div>
-  </div>`;
+      <span class="text-xs text-gray-400">${fmtDate(session.created_at)}</span>
+      <span class="text-xs text-gray-500">${msgs ? msgs.length : 0} message(s)</span>
+    </div>`;
 
-  html += `<div class="space-y-2">`;
-
-  msgs.forEach((msg, i) => {
-    // Parse the body — it's a JSON array of messages
-    let parsed = [];
-    try {
-      parsed = JSON.parse(msg.body);
-    } catch {
-      parsed = [];
-    }
-
-    const toolsLabel = msg.tools_hash
-      ? `<span class="text-xs text-amber-400">⚙ tools: ${escHtml(msg.tools_hash.slice(0, 8))}…</span>`
-      : '';
-
+  // Tools section (expandable gear icon)
+  if (toolsHash) {
     html += `
-      <div class="bg-gray-900 rounded border border-gray-700">
-        <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
-          <span class="text-xs font-semibold text-gray-400">#${i+1}</span>
-          <span class="font-mono text-xs text-gray-500">${escHtml(msg.hash.slice(0, 12))}…</span>
-          ${toolsLabel}
-          <span class="ml-auto text-xs text-gray-600">${fmtTime(msg.created_at)}</span>
+      <details class="mt-3 bg-gray-900 rounded border border-gray-700" id="tools-detail">
+        <summary class="flex items-center justify-between px-4 py-2 text-sm text-gray-300 hover:text-white cursor-pointer">
+          <span>⚙ Tools <span class="text-gray-600 font-mono">${escHtml(toolsHash.slice(0, 8))}…</span></span>
+          <span class="text-gray-600 text-xs">▾</span>
+        </summary>
+        <div class="p-4 border-t border-gray-700">
+          <pre id="tools-body" class="json-block text-amber-300 bg-gray-950 p-3 rounded overflow-x-auto text-xs"></pre>
         </div>
-        <div class="px-4 pb-4 pt-2">
-          ${parsed.map(renderMessage).join('') || '<span class="text-gray-600 text-xs">parse error</span>'}
-        </div>
-      </div>`;
-  });
+      </details>`;
+  }
 
   html += `</div>`;
+
+  // Messages
+  if (msgs && msgs.length > 0) {
+    html += `<div class="space-y-2">`;
+    msgs.forEach((msg, i) => {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(msg.body);
+      } catch {
+        parsed = null;
+      }
+
+      html += `
+        <div class="bg-gray-900 rounded border border-gray-700">
+          <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
+            <span class="text-xs font-semibold text-gray-400">#${i+1}</span>
+            <span class="font-mono text-xs text-gray-500">${escHtml(msg.hash.slice(0, 12))}…</span>
+            <span class="ml-auto text-xs text-gray-600">${fmtTime(msg.created_at)}</span>
+          </div>
+          <div class="px-4 pb-4 pt-2">
+            ${parsed ? renderMessage(parsed) : '<span class="text-gray-600 text-xs">parse error</span>'}
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="text-gray-600 text-xs text-center">No messages in this session.</div>`;
+  }
+
   return html;
+}
+
+// Post-render: fetch tools body for the tools section.
+function loadToolsBody(toolsHash) {
+  if (!toolsHash) return;
+  const pre = document.getElementById('tools-body');
+  if (!pre) return;
+  fetch(`/api/tools/${escHtml(toolsHash)}`)
+    .then(r => r.json())
+    .then(tools => { pre.textContent = JSON.stringify(tools, null, 2); })
+    .catch(() => { pre.textContent = 'Failed to load tools'; });
 }
 
 // ── List Rendering ──────────────────────────────────────────
@@ -446,11 +471,17 @@ function renderSessionsList(sessions) {
   return sessions.map(s => {
     const isSelected = s.id === selectedId;
     const sel = isSelected ? 'bg-indigo-900/40 border-indigo-500' : 'border-transparent hover:bg-gray-800/50';
+    const toolsBadge = s.tools_hash
+      ? `<span class="text-xs text-amber-400">⚙</span>`
+      : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
            onclick="selectSession('${escHtml(s.id)}')">
         <div class="flex items-center justify-between">
-          <span class="text-xs text-emerald-400">session</span>
+          <span class="flex items-center gap-1">
+            <span class="text-xs text-emerald-400">session</span>
+            ${toolsBadge}
+          </span>
           <span class="text-xs text-gray-500">${s.message_count} msg(s)</span>
         </div>
         <div class="text-xs text-gray-400 mt-0.5">${fmtTime(s.created_at)}</div>
@@ -500,8 +531,9 @@ async function selectSession(id) {
   document.getElementById('request-list').innerHTML = renderSessionsList(allSessions);
   document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
   try {
-    const msgs = await fetchSessionDetail(id);
-    document.getElementById('detail-panel').innerHTML = renderSessionDetail(msgs);
+    const data = await fetchSessionDetail(id);
+    document.getElementById('detail-panel').innerHTML = renderSessionDetail(data.session, data.messages);
+    loadToolsBody(data.session.tools_hash);
   } catch (e) {
     document.getElementById('detail-panel').innerHTML = '<div class="text-red-400 text-sm text-center mt-32">Failed to load session.</div>';
   }

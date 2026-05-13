@@ -16,24 +16,21 @@ import (
 )
 
 // CompactLogger stores conversation data in SQLite with O(n) storage.
-// Messages are deduplicated via hash-chaining: each message hash is
-// SHA256(session_id + prev_hash + body + tools_hash), so the chain is
-// implicit in the hashes. Tool definitions are stored in a separate table,
-// deduplicated by SHA256(canonical JSON).
+// Messages are globally deduplicated by SHA256(body).
+// Sessions reference messages via a join table and own a tools_hash.
 
 // CompactSession summarizes a stored conversation session.
 type CompactSession struct {
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	MessageCt int       `json:"message_count"`
+	ToolsHash *string   `json:"tools_hash,omitempty"`
 }
 
-// CompactMessage represents one message in a conversation chain.
+// CompactMessage represents one message in a conversation.
 type CompactMessage struct {
 	Hash      string    `json:"hash"`
-	PrevHash  *string   `json:"prev_hash,omitempty"`
 	Body      string    `json:"body"`
-	ToolsHash *string   `json:"tools_hash,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -47,9 +44,9 @@ func toolsHash(body []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
-// messageHash produces a deterministic hash from session, previous message, body and tools.
-func messageHash(sessionID, prevHash, body, toolsHashStr string) string {
-	h := sha256.Sum256([]byte(sessionID + prevHash + body + toolsHashStr))
+// bodyHash computes a deterministic SHA256 hash of a message body.
+func bodyHash(body string) string {
+	h := sha256.Sum256([]byte(body))
 	return hex.EncodeToString(h[:])
 }
 
@@ -75,26 +72,30 @@ func NewCompact(logDir string) (*CompactLogger, error) {
 
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS tools (
-			hash   TEXT    PRIMARY KEY,
+			hash    TEXT    PRIMARY KEY,
 			body   TEXT    NOT NULL,
 			created_at REAL NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS sessions (
-			id         TEXT    PRIMARY KEY,
-			created_at REAL    NOT NULL
-		)`,
 		`CREATE TABLE IF NOT EXISTS messages (
 			hash       TEXT    PRIMARY KEY,
-			session_id TEXT    NOT NULL,
-			prev_hash  TEXT,
 			body       TEXT    NOT NULL,
+			created_at REAL    NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			id         TEXT    PRIMARY KEY,
 			tools_hash TEXT,
 			created_at REAL    NOT NULL,
-			FOREIGN KEY(session_id) REFERENCES sessions(id),
 			FOREIGN KEY(tools_hash) REFERENCES tools(hash)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS session_messages (
+			session_id   TEXT    NOT NULL,
+			message_hash TEXT    NOT NULL,
+			sequence     INTEGER NOT NULL,
+			UNIQUE(session_id, sequence),
+			FOREIGN KEY(session_id) REFERENCES sessions(id),
+			FOREIGN KEY(message_hash) REFERENCES messages(hash)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.ExecContext(ctx, stmt); err != nil {
@@ -111,8 +112,9 @@ func (c *CompactLogger) Close() error {
 	return c.db.Close()
 }
 
-// StartSession creates a new session, returning the session ID.
-func (c *CompactLogger) StartSession() (string, error) {
+// StartSession creates a new session with the given tools hash.
+// toolsHash can be empty string if no tools.
+func (c *CompactLogger) StartSession(toolsHash string) (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("compact logger: rand: %w", err)
@@ -127,9 +129,13 @@ func (c *CompactLogger) StartSession() (string, error) {
 		hex.EncodeToString(b[10:16]),
 	)
 
+	var toolsPtr *string
+	if toolsHash != "" {
+		toolsPtr = &toolsHash
+	}
 	if _, err := c.db.ExecContext(context.Background(),
-		`INSERT INTO sessions (id, created_at) VALUES (?, ?)`,
-		id, time.Now().UnixMilli(),
+		`INSERT INTO sessions (id, tools_hash, created_at) VALUES (?, ?, ?)`,
+		id, toolsPtr, time.Now().UnixMilli(),
 	); err != nil {
 		return "", fmt.Errorf("compact logger: insert session: %w", err)
 	}
@@ -157,61 +163,71 @@ func (c *CompactLogger) StoreTools(body []byte) string {
 	return existing
 }
 
-// StoreMessage inserts a message into the chain, deduplicating by hash.
-// prevHash is the parent message hash (empty string for first message).
-// toolsHashStr is the tools hash (empty string if no tools).
-func (c *CompactLogger) StoreMessage(sessionID, prevHash, body, toolsHashStr string) *CompactMessage {
-	mh := messageHash(sessionID, prevHash, body, toolsHashStr)
+// StoreMessage deduplicates a message by body content, returning its hash.
+func (c *CompactLogger) StoreMessage(body string) string {
+	bh := bodyHash(body)
 
 	var existing string
-	err := c.db.QueryRowContext(context.Background(), "SELECT hash FROM messages WHERE hash = ?", mh).Scan(&existing)
+	err := c.db.QueryRowContext(context.Background(), "SELECT hash FROM messages WHERE hash = ?", bh).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
-		var prevPtr *string
-		if prevHash != "" {
-			prevPtr = &prevHash
-		}
-		var toolsPtr *string
-		if toolsHashStr != "" {
-			toolsPtr = &toolsHashStr
-		}
 		if _, err := c.db.ExecContext(context.Background(),
-			`INSERT INTO messages (hash, session_id, prev_hash, body, tools_hash, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			mh, sessionID, prevPtr, body, toolsPtr, time.Now().UnixMilli(),
+			`INSERT INTO messages (hash, body, created_at) VALUES (?, ?, ?)`,
+			bh, body, time.Now().UnixMilli(),
 		); err != nil {
-			return nil
+			return ""
 		}
-	} else if err != nil {
-		return nil
+		return bh
 	}
-
-	// For returned record, use pointers for nullable fields.
-	var prevPtr *string
-	if prevHash != "" {
-		prevPtr = &prevHash
+	if err != nil {
+		return ""
 	}
-	var toolsPtr *string
-	if toolsHashStr != "" {
-		toolsPtr = &toolsHashStr
-	}
-	return &CompactMessage{
-		Hash:      mh,
-		PrevHash:  prevPtr,
-		Body:      body,
-		ToolsHash: toolsPtr,
-		CreatedAt: time.Now(),
-	}
+	return existing
 }
 
-// GetSession reconstructs a full conversation from the message chain.
-func (c *CompactLogger) GetSession(id string) ([]CompactMessage, error) {
+// AddMessageToSession adds a message hash to a session's message chain.
+func (c *CompactLogger) AddMessageToSession(sessionID, messageHash string) error {
+	var seq int
+	err := c.db.QueryRowContext(context.Background(),
+		"SELECT COALESCE(MAX(sequence), 0) FROM session_messages WHERE session_id = ?",
+		sessionID,
+	).Scan(&seq)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = c.db.ExecContext(context.Background(),
+		`INSERT INTO session_messages (session_id, message_hash, sequence) VALUES (?, ?, ?)`,
+		sessionID, messageHash, seq+1,
+	)
+	return err
+}
+
+// GetSession reconstructs a conversation, returning messages in order with session metadata.
+func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactMessage, error) {
+	// Get session metadata
+	var session CompactSession
+	var toolsHashPtr *string
+	var created float64
+	err := c.db.QueryRowContext(context.Background(),
+		`SELECT id, tools_hash, created_at FROM sessions WHERE id = ?`,
+		id,
+	).Scan(&session.ID, &toolsHashPtr, &created)
+	if err != nil {
+		return nil, nil, err
+	}
+	session.CreatedAt = time.UnixMilli(int64(created))
+	session.ToolsHash = toolsHashPtr
+
+	// Get messages in sequence order
 	rows, err := c.db.QueryContext(context.Background(),
-		`SELECT hash, prev_hash, body, tools_hash, created_at
-		 FROM messages WHERE session_id = ? ORDER BY created_at ASC`,
+		`SELECT m.hash, m.body, m.created_at
+		 FROM session_messages sm
+		 JOIN messages m ON m.hash = sm.message_hash
+		 WHERE sm.session_id = ?
+		 ORDER BY sm.sequence ASC`,
 		id,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -219,22 +235,22 @@ func (c *CompactLogger) GetSession(id string) ([]CompactMessage, error) {
 	for rows.Next() {
 		var msg CompactMessage
 		var created float64
-		if err := rows.Scan(&msg.Hash, &msg.PrevHash, &msg.Body, &msg.ToolsHash, &created); err != nil {
+		if err := rows.Scan(&msg.Hash, &msg.Body, &created); err != nil {
 			continue
 		}
 		msg.CreatedAt = time.UnixMilli(int64(created))
 		msgs = append(msgs, msg)
 	}
-	return msgs, nil
+	return &session, msgs, nil
 }
 
 // ListSessions returns recent sessions (last n days).
 func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
 	rows, err := c.db.QueryContext(context.Background(),
-		`SELECT s.id, s.created_at, COUNT(m.hash)
+		`SELECT s.id, s.tools_hash, s.created_at, COUNT(sm.message_hash)
 		 FROM sessions s
-		 LEFT JOIN messages m ON m.session_id = s.id
+		 LEFT JOIN session_messages sm ON sm.session_id = s.id
 		 WHERE s.created_at >= ?
 		 GROUP BY s.id
 		 ORDER BY s.created_at DESC`,
@@ -249,7 +265,7 @@ func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 	for rows.Next() {
 		var s CompactSession
 		var created float64
-		if err := rows.Scan(&s.ID, &created, &s.MessageCt); err != nil {
+		if err := rows.Scan(&s.ID, &s.ToolsHash, &created, &s.MessageCt); err != nil {
 			continue
 		}
 		s.CreatedAt = time.UnixMilli(int64(created))

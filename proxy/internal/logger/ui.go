@@ -56,14 +56,14 @@ func (c *CompactLogger) HandleSessionsList(w http.ResponseWriter, r *http.Reques
 	_ = json.NewEncoder(w).Encode(sessions)
 }
 
-// HandleSessionDetail returns the full message chain for a session.
+// HandleSessionDetail returns the session metadata and message chain.
 func (c *CompactLogger) HandleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	msgs, err := c.GetSession(id)
+	session, msgs, err := c.GetSession(id)
 	if err != nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
@@ -72,5 +72,21 @@ func (c *CompactLogger) HandleSessionDetail(w http.ResponseWriter, r *http.Reque
 		msgs = []CompactMessage{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(msgs)
+	_ = json.NewEncoder(w).Encode(map[string]any{"session": session, "messages": msgs})
+}
+
+// HandleToolsDetail returns a tools JSON blob by hash.
+func (c *CompactLogger) HandleToolsDetail(w http.ResponseWriter, r *http.Request) {
+	hash := r.PathValue("hash")
+	if hash == "" {
+		http.Error(w, "missing hash", http.StatusBadRequest)
+		return
+	}
+	body, err := c.GetTools(hash)
+	if err != nil {
+		http.Error(w, "tools not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(body))
 }

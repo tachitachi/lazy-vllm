@@ -130,12 +130,16 @@ func (s *Server) forwardWithLogging(
 		if len(toolsBlob) > 0 && string(toolsBlob) != "null" {
 			toolsHash = compactLogger.StoreTools(toolsBlob)
 		}
-		sessionID, _ = compactLogger.StartSession()
+		sessionID, _ = compactLogger.StartSession(toolsHash)
 
-		// Store the full messages array as one deduplicated message record.
+		// Store each message individually (globally deduplicated).
 		msgs := msgParser(body)
-		msgBody, _ := json.Marshal(msgs)
-		compactLogger.StoreMessage(sessionID, "", string(msgBody), toolsHash)
+		for _, msg := range msgs {
+			msgBody, _ := json.Marshal(msg)
+			if mh := compactLogger.StoreMessage(string(msgBody)); mh != "" {
+				_ = compactLogger.AddMessageToSession(sessionID, mh)
+			}
+		}
 	}
 
 	var reqLog *logger.RequestLog
@@ -148,6 +152,15 @@ func (s *Server) forwardWithLogging(
 	forwardRequest(r.Context(), rc, r, baseURL, body)
 	if reqLog != nil {
 		reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
+	}
+
+	// Store the output message (globally deduplicated).
+	if compactLogger != nil && sessionID != "" {
+		output := outParser(rc.buf.Bytes(), req.Stream)
+		outputBody, _ := json.Marshal(output)
+		if mh := compactLogger.StoreMessage(string(outputBody)); mh != "" {
+			_ = compactLogger.AddMessageToSession(sessionID, mh)
+		}
 	}
 }
 
