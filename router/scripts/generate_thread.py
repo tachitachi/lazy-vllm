@@ -10,7 +10,7 @@ import uuid
 # Configuration
 DEFAULT_ROUTER_URL = "http://localhost:8001/v1/chat/completions"
 DEFAULT_GENERATOR_URL = "http://localhost:8000/v1/chat/completions"
-MODEL = "Qwen3.6-35B-A3B-NVFP4"
+MODEL = "Qwen3.6-27B-Text-NVFP4-MTP"
 
 def generate_response(llm_url, history):
     """

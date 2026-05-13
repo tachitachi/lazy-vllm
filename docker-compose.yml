@@ -94,10 +94,10 @@ services:
       - --tool-call-parser=qwen3_coder
       - --enable-prefix-caching
       - --enable-chunked-prefill
-      - --max-num-seqs=256
+      - --max-num-seqs=8
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"preserve_thinking": true, "enable_thinking": true}'
-      # - '--speculative-config={"method":"mtp","num_speculative_tokens":6}'
+      - '--speculative-config={"method":"mtp","num_speculative_tokens":3}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
     profiles:
@@ -157,6 +157,53 @@ services:
       qwen36:
         condition: service_healthy
 
+  qwen36-27b:
+    image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
+    ports:
+      - "8003:8000"
+    ipc: host
+    shm_size: '16g'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: always
+    command:
+      - --model=sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
+      - --served-model-name
+      - sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
+      - Qwen3.6-27B-Text-NVFP4-MTP
+      - --max-model-len=262144
+      - --gpu-memory-utilization=0.40
+      - --kv-cache-dtype=fp8
+      - --host=0.0.0.0
+      - --port=8000
+      - --async-scheduling
+      - --enable-auto-tool-choice
+      - --reasoning-parser=qwen3
+      - --tool-call-parser=qwen3_coder
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --max-num-seqs=16
+      - --max-num-batched-tokens=8192
+      - '--default-chat-template-kwargs={"preserve_thinking": true, "enable_thinking": true}'
+      - '--speculative-config={"method":"mtp","num_speculative_tokens":3}'
+      - --quantization=modelopt
+      - --language-model-only
+    profiles:
+      - qwen36-27b
+
   # thinking-router:
   #   build:
   #     context: ./router
@@ -177,8 +224,8 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - BACKENDS_MAP=[{"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000"},{"name":"Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000"},{"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000"},{"name":"Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000"}]
-      - ROUTING_RULES=[{"source_model":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","threshold":240000,"target_model":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M"},{"source_model":"Qwen3.6-35B-A3B-NVFP4","threshold":240000,"target_model":"Qwen3.6-35B-A3B-NVFP4-1M"}]
+      - BACKENDS_MAP=[{"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000"},{"name":"Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000"},{"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000"},{"name":"Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000"},{"name":"sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000"},{"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000"}]
+      # - ROUTING_RULES=[{"source_model":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","threshold":240000,"target_model":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M"},{"source_model":"Qwen3.6-35B-A3B-NVFP4","threshold":240000,"target_model":"Qwen3.6-35B-A3B-NVFP4-1M"},{"source_model":"sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP","threshold":240000,"target_model":"Qwen3.6-35B-A3B-NVFP4-1M"},{"source_model":"Qwen3.6-27B-Text-NVFP4-MTP","threshold":240000,"target_model":"Qwen3.6-35B-A3B-NVFP4-1M"}]
       # - BACKENDS_MAP=[{"name":"RedHatAI/Qwen3.6","url":"http://qwen36:8000"},{"name":"Qwen3.6","url":"http://qwen36:8000"},{"name":"google","url":"http://gemma4:8000"},{"name":"RedHatAI/gemma","url":"http://gemma4:8000"},{"name":"gemma","url":"http://gemma4:8000"}]
       - PORT=8002
       - LOG_LEVEL=${LOG_LEVEL:-INFO}

@@ -5,7 +5,7 @@ global:
 scrape_configs:
   - job_name: vllm
     static_configs:
-      - targets: ['qwen36:8000', 'qwen36-1m:8000', 'gemma4:8000']
+      - targets: ['qwen36:8000', 'qwen36-1m:8000', 'qwen36-27b:8000', 'gemma4:8000']
 
   - job_name: node
     static_configs:
