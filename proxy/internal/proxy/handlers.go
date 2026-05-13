@@ -64,11 +64,13 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 func (s *Server) HandleChatCompletions(
 	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger,
 ) {
-	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput)
+	tokenCount := s.countOpenAITokens(resolveBackend(s.Backends, extractModel(body)), body)
+	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount)
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger) {
-	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput)
+	tokenCount := s.countAnthropicTokens(resolveBackend(s.Backends, extractModel(body)), body)
+	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount)
 }
 
 func (s *Server) forwardWithLogging(
@@ -80,6 +82,7 @@ func (s *Server) forwardWithLogging(
 	format string,
 	msgParser messageParser,
 	outParser outputParser,
+	tokenCount int,
 ) {
 	model := extractModel(body)
 	baseURL := resolveBackend(s.Backends, model)
@@ -88,17 +91,6 @@ func (s *Server) forwardWithLogging(
 		Stream bool `json:"stream"`
 	}
 	json.Unmarshal(body, &req) //nolint:errcheck // malformed body → Stream=false is safe
-
-	// Count tokens before forwarding.
-	var tokenCount int
-	if format == "openai" {
-		tokenCount = s.countOpenAITokens(baseURL, body)
-	} else {
-		tokenCount = s.countAnthropicTokens(baseURL, body)
-	}
-	if tokenCount > 0 {
-		slog.Info("token count", "tokens", tokenCount, "format", format)
-	}
 
 	// Apply routing rules based on token threshold.
 	targetModel := ""
@@ -130,7 +122,7 @@ func (s *Server) forwardWithLogging(
 		if len(toolsBlob) > 0 && string(toolsBlob) != "null" {
 			toolsHash = compactLogger.StoreTools(toolsBlob)
 		}
-		sessionID, _ = compactLogger.StartSession(toolsHash, format)
+		sessionID, _ = compactLogger.StartSession(toolsHash, format, tokenCount)
 
 		// Store each message individually (globally deduplicated).
 		msgs := msgParser(body)

@@ -495,6 +495,9 @@ function renderSessionsList(sessions) {
     const toolsBadge = s.tools_hash
       ? `<span class="text-xs text-amber-400">⚙</span>`
       : '';
+    const tokenBadge = s.token_count > 0
+      ? `<span class="text-xs text-gray-500">${(s.token_count / 1000).toFixed(1)}k tok</span>`
+      : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
            onclick="selectSession('${escHtml(s.id)}')">
@@ -502,6 +505,7 @@ function renderSessionsList(sessions) {
           <span class="flex items-center gap-1">
             <span class="text-xs text-emerald-400">${escHtml(s.format || 'unknown')}</span>
             ${toolsBadge}
+            ${tokenBadge}
           </span>
           <span class="text-xs text-gray-500">${s.message_count} msg(s)</span>
         </div>

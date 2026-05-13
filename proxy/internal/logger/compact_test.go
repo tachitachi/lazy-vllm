@@ -125,7 +125,7 @@ func TestSessionWithMessages(t *testing.T) {
 
 	tools := []byte(`[{"type":"function","function":{"name":"calc"}}]`)
 	toolsHash := l.StoreTools(tools)
-	sessionID, err := l.StartSession(toolsHash, "openai")
+	sessionID, err := l.StartSession(toolsHash, "openai", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,9 +188,9 @@ func TestMessageCrossSessionDedup(t *testing.T) {
 func TestListSessions(t *testing.T) {
 	l := newTestLogger(t)
 
-	_, _ = l.StartSession("", "openai")
-	_, _ = l.StartSession("", "openai")
-	_, _ = l.StartSession("", "openai")
+	_, _ = l.StartSession("", "openai", 0)
+	_, _ = l.StartSession("", "openai", 0)
+	_, _ = l.StartSession("", "openai", 0)
 
 	sessions, err := l.ListSessions(7)
 	if err != nil {
