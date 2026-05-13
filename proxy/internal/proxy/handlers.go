@@ -64,12 +64,16 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 func (s *Server) HandleChatCompletions(
 	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger,
 ) {
-	tokenCount := s.countOpenAITokens(resolveBackend(s.Backends, extractModel(body)), body)
+	model := extractModel(body)
+	backendURL := resolveBackend(s.Backends, stripFlash(model))
+	tokenCount := s.countOpenAITokens(backendURL, body)
 	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount)
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger) {
-	tokenCount := s.countAnthropicTokens(resolveBackend(s.Backends, extractModel(body)), body)
+	model := extractModel(body)
+	backendURL := resolveBackend(s.Backends, stripFlash(model))
+	tokenCount := s.countAnthropicTokens(backendURL, body)
 	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount)
 }
 
@@ -85,7 +89,14 @@ func (s *Server) forwardWithLogging(
 	tokenCount int,
 ) {
 	model := extractModel(body)
-	baseURL := resolveBackend(s.Backends, model)
+	// Handle flash models: strip suffix for routing, inject kwargs in body
+	flash := isFlashModel(model)
+	baseURL := resolveBackend(s.Backends, stripFlash(model))
+
+	bodyToForward := body
+	if flash {
+		bodyToForward = injectDisableThinking(body)
+	}
 
 	var req struct {
 		Stream bool `json:"stream"`
@@ -94,8 +105,9 @@ func (s *Server) forwardWithLogging(
 
 	// Apply routing rules based on token threshold.
 	targetModel := ""
+	realModel := stripFlash(model)
 	for _, rule := range s.RoutingRules {
-		if model == rule.SourceModel && tokenCount >= rule.Threshold {
+		if realModel == rule.SourceModel && tokenCount >= rule.Threshold {
 			slog.Info("route override",
 				"from", model,
 				"to", rule.TargetModel,
@@ -110,7 +122,7 @@ func (s *Server) forwardWithLogging(
 	}
 
 	if diskLogger == nil && compactLogger == nil {
-		forwardRequest(r.Context(), w, r, baseURL, body)
+		forwardRequest(r.Context(), w, r, baseURL, bodyToForward)
 		return
 	}
 
@@ -136,12 +148,12 @@ func (s *Server) forwardWithLogging(
 
 	var reqLog *logger.RequestLog
 	if diskLogger != nil {
-		reqLog = diskLogger.Start(format, r.URL.Path, r.Header, body)
+		reqLog = diskLogger.Start(format, r.URL.Path, r.Header, bodyToForward)
 		defer diskLogger.Save(reqLog)
 	}
 
 	rc := &responseCapture{ResponseWriter: w}
-	forwardRequest(r.Context(), rc, r, baseURL, body)
+	forwardRequest(r.Context(), rc, r, baseURL, bodyToForward)
 	if reqLog != nil {
 		reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
 	}
@@ -162,9 +174,14 @@ func (s *Server) forwardWithLogging(
 }
 
 func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body []byte) {
-	baseURL := resolveBackend(s.Backends, extractModel(body))
+	model := extractModel(body)
+	baseURL := resolveBackend(s.Backends, stripFlash(model))
+	bodyToForward := body
+	if isFlashModel(model) {
+		bodyToForward = injectDisableThinking(body)
+	}
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method,
-		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(body)))
+		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(bodyToForward)))
 	if err != nil {
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 		return

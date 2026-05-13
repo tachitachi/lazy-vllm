@@ -96,8 +96,53 @@ func (s *Server) HandleModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Inject -FLASH clones for each model
+	merged = injectFlashModels(merged)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: merged})
 	slog.Info("models aggregated", "total", len(merged), "backends", len(urls))
+}
+
+// injectFlashModels adds -FLASH clones for each model in the list.
+func injectFlashModels(models []json.RawMessage) []json.RawMessage {
+	var result []json.RawMessage
+	for _, raw := range models {
+		result = append(result, raw)
+		flash := cloneModelWithFlash(raw)
+		if flash != nil {
+			result = append(result, flash)
+		}
+	}
+	return result
+}
+
+// cloneModelWithFlash creates a clone of a model JSON with -FLASH appended to the id.
+func cloneModelWithFlash(raw json.RawMessage) json.RawMessage {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil
+	}
+	idBytes, ok := obj["id"]
+	if !ok {
+		return nil
+	}
+	var id string
+	if err := json.Unmarshal(idBytes, &id); err != nil {
+		return nil
+	}
+
+	flashID := id + flashSuffix
+	obj["id"] = json.RawMessage("\"" + flashID + "\"")
+
+	// Also update root field if it matches the original id, to keep clones internally consistent.
+	if rootBytes, has := obj["root"]; has {
+		var root string
+		if err := json.Unmarshal(rootBytes, &root); err == nil && root == id {
+			obj["root"] = json.RawMessage("\"" + flashID + "\"")
+		}
+	}
+	data, _ := json.Marshal(obj)
+	return data
 }

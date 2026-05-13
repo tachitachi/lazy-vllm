@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"log/slog"
+	"strings"
 
 	"lazy-vllm-proxy/internal/config"
 )
@@ -54,4 +55,37 @@ func extractModel(body []byte) string {
 		}
 	}
 	return ""
+}
+
+const flashSuffix = "-FLASH"
+
+// stripFlash removes the -FLASH suffix from a model name if present.
+func stripFlash(name string) string {
+	if strings.HasSuffix(name, flashSuffix) {
+		return strings.TrimSuffix(name, flashSuffix)
+	}
+	return name
+}
+
+// isFlashModel checks if a model name is the flash variant.
+func isFlashModel(name string) bool {
+	return strings.HasSuffix(name, flashSuffix)
+}
+
+// injectDisableThinking adds chat_template_kwargs to disable thinking in the request body.
+// Also strips the -FLASH suffix from the model name so the backend recognizes it.
+func injectDisableThinking(body []byte) []byte {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return body
+	}
+	obj["chat_template_kwargs"] = map[string]any{"enable_thinking": false}
+	if model, ok := obj["model"].(string); ok && isFlashModel(model) {
+		obj["model"] = stripFlash(model)
+	}
+	data, _ := json.Marshal(obj)
+	if len(data) == 0 {
+		return body
+	}
+	return data
 }
