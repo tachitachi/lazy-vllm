@@ -31,6 +31,27 @@
     .md-content hr { border-color:#374151; margin:0.5rem 0; }
     .md-content ul,.md-content ol { padding-left:1.5rem; margin:0.25rem 0; }
     .md-content li { margin:0.1rem 0; }
+    @media (max-width: 768px) {
+      #sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 50;
+        box-shadow: 2px 0 8px rgba(0,0,0,0.5);
+        transition: width 0.2s ease-in-out;
+      }
+      #mobile-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0,0,0,0.5);
+        display: none;
+      }
+      #mobile-overlay.visible {
+        display: block;
+      }
+    }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-200 h-screen flex flex-col overflow-hidden">
@@ -38,10 +59,11 @@
   <!-- Header -->
   <header class="bg-gray-900 border-b border-gray-700 px-5 py-3 flex items-center justify-between shrink-0">
     <div class="flex items-center gap-3">
+      <button id="sidebar-toggle" class="text-gray-400 hover:text-white text-xl" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>
       <span class="text-lg font-semibold text-white">Agent Logs</span>
       <span id="status-dot" class="w-2 h-2 rounded-full bg-gray-500"></span>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 flex-wrap">
       <!-- View Toggle -->
       <div class="flex items-center bg-gray-800 rounded-lg p-0.5 border border-gray-600">
         <button id="view-logs" class="px-3 py-1.5 text-sm rounded-md transition-colors bg-indigo-600 text-white" onclick="switchView('logs')">Logs</button>
@@ -59,18 +81,21 @@
   <!-- Main -->
   <main class="flex flex-1 min-h-0">
 
-    <!-- Left: list -->
-    <aside class="w-72 shrink-0 border-r border-gray-700 bg-gray-900 flex flex-col">
+    <!-- Left: list (collapsible, overlay on mobile) -->
+    <aside id="sidebar" class="w-72 shrink-0 border-r border-gray-700 bg-gray-900 flex flex-col transition-all duration-200 ease-in-out overflow-hidden" style="width:18rem; min-width:18rem;">
       <div class="px-3 py-2 text-xs text-gray-500 border-b border-gray-700 font-medium uppercase tracking-wide" id="list-header">Requests</div>
       <div id="request-list" class="overflow-y-auto flex-1"></div>
     </aside>
 
     <!-- Right: detail -->
-    <section class="flex-1 overflow-y-auto p-6 bg-gray-950" id="detail-panel">
+    <section class="flex-1 overflow-y-auto p-3 md:p-6 bg-gray-950 min-w-0" id="detail-panel">
       <div class="text-gray-500 text-center mt-32 text-sm">Select an item from the list to inspect it.</div>
     </section>
 
   </main>
+
+  <!-- Mobile overlay (shown when sidebar is open on mobile) -->
+  <div id="mobile-overlay" onclick="closeSidebar()"></div>
 
 <script>
 let selectedId = null;
@@ -125,6 +150,56 @@ function switchView(view) {
     loadSessionsList();
   }
 }
+
+// ── Sidebar toggle ───────────────────────────────────────────
+
+let sidebarOpen = !window.matchMedia('(max-width: 768px)').matches;
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('mobile-overlay');
+  sidebarOpen = !sidebarOpen;
+  if (sidebarOpen) {
+    sidebar.style.width = '18rem';
+    sidebar.style.minWidth = '18rem';
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      overlay.classList.add('visible');
+    }
+  } else {
+    sidebar.style.width = '0';
+    sidebar.style.minWidth = '0';
+    if (window.matchMedia('(max-width: 768px)').matches) {
+      overlay.classList.remove('visible');
+    }
+  }
+  sidebar.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('mobile-overlay');
+  sidebarOpen = false;
+  sidebar.style.width = '0';
+  sidebar.style.minWidth = '0';
+  overlay.classList.remove('visible');
+}
+
+// Initialize sidebar state based on screen size
+(function() {
+  if (!sidebarOpen) {
+    document.getElementById('sidebar').style.width = '0';
+    document.getElementById('sidebar').style.minWidth = '0';
+  }
+})();
+
+// Close sidebar when clicking outside on mobile
+window.addEventListener('resize', function() {
+  if (window.matchMedia('(max-width: 768px)').matches) {
+    sidebarOpen = false;
+    document.getElementById('sidebar').style.width = '0';
+    document.getElementById('sidebar').style.minWidth = '0';
+  }
+});
 
 // ── Fetch helpers (old logs) ─────────────────────────────────
 
