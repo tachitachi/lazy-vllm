@@ -1,0 +1,27 @@
+FROM debian:bookworm-slim
+
+# Core tools: Go, Node, Python
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl git bash && \
+    # Detect arch and install Go 1.26.2
+    ARCH=$(dpkg --print-architecture | sed 's/amd64/amd64/; s/arm64/arm64/') && \
+    curl -sL "https://dl.google.com/go/go1.26.2.linux-${ARCH}.tar.gz" | tar xz -C /usr/local && \
+    # Node.js 20.x via nodesource
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    # Python 3
+    apt-get install -y python3 python3-pip && \
+    # Cleanup
+    rm -rf /var/lib/apt/lists/*
+
+# Accept any mounted directory for git (needed for bind-mounted workspaces)
+RUN git config --global --add safe.directory '*'
+
+# Install Claude Code via npm globally
+RUN npm install -g @anthropic-ai/claude-code
+
+ENV PATH="/usr/local/go/bin:/root/.npm-global/bin:$PATH"
+ENV GOPATH="/root/go"
+
+# Default working directory for mounted workspace
+WORKDIR /workspace
