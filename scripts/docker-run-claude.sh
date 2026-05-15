@@ -24,9 +24,6 @@ docker run -it --rm --network host \
     -e HOME=/home/ubuntu \
     -v "$(pwd):/workspace" \
     -v claude-home:/home/ubuntu \
-    -v claude-npm-cache:/home/ubuntu/.npm \
-    -v claude-cache:/home/ubuntu/.cache \
-    -v claude-go-cache:/home/ubuntu/go/pkg/mod \
     -e ANTHROPIC_BASE_URL=http://localhost:8002 \
     -e ANTHROPIC_API_KEY=dummy \
     -e ANTHROPIC_AUTH_TOKEN=dummy \

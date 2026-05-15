@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"lazy-vllm-proxy/internal/logger"
 )
@@ -38,6 +39,7 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	upstream, err := http.NewRequestWithContext(ctx, r.Method,
 		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(body)))
 	if err != nil {
+		slog.Error("build upstream request failed", "err", err, "path", r.RequestURI)
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 		return
 	}
@@ -48,6 +50,7 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	}
 	resp, err := http.DefaultClient.Do(upstream)
 	if err != nil {
+		slog.Error("upstream request failed", "err", err, "url", baseURL+r.RequestURI)
 		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}
@@ -134,14 +137,18 @@ func (s *Server) forwardWithLogging(
 		if len(toolsBlob) > 0 && string(toolsBlob) != "null" {
 			toolsHash = compactLogger.StoreTools(toolsBlob)
 		}
-		sessionID, _ = compactLogger.StartSession(toolsHash, format, tokenCount)
+		var err error
+		sessionID, err = compactLogger.StartSession(toolsHash, format, model, tokenCount)
+		if err != nil {
+			slog.Warn("compact logger: start session failed", "err", err)
+		}
 
 		// Store each message individually (globally deduplicated).
 		msgs := msgParser(body)
 		for _, msg := range msgs {
 			msgBody, _ := json.Marshal(msg)
 			if mh := compactLogger.StoreMessage(string(msgBody)); mh != "" {
-				_ = compactLogger.AddMessageToSession(sessionID, mh)
+				_ = compactLogger.AddMessageToSession(sessionID, mh, 0)
 			}
 		}
 	}
@@ -153,7 +160,9 @@ func (s *Server) forwardWithLogging(
 	}
 
 	rc := &responseCapture{ResponseWriter: w}
+	forwardStart := time.Now()
 	forwardRequest(r.Context(), rc, r, baseURL, bodyToForward)
+	durationMS := time.Since(forwardStart).Milliseconds()
 	if reqLog != nil {
 		reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
 	}
@@ -168,7 +177,7 @@ func (s *Server) forwardWithLogging(
 			"tool_calls": output.ToolCalls,
 		})
 		if mh := compactLogger.StoreMessage(string(outputBody)); mh != "" {
-			_ = compactLogger.AddMessageToSession(sessionID, mh)
+			_ = compactLogger.AddMessageToSession(sessionID, mh, durationMS)
 		}
 	}
 }
@@ -183,6 +192,7 @@ func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method,
 		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(bodyToForward)))
 	if err != nil {
+		slog.Error("generic proxy: build upstream request failed", "err", err, "path", r.RequestURI)
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 		return
 	}
@@ -193,6 +203,7 @@ func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body
 	}
 	resp, err := http.DefaultClient.Do(upstream)
 	if err != nil {
+		slog.Error("generic proxy: upstream request failed", "err", err, "url", baseURL+r.RequestURI)
 		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}

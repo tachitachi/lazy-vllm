@@ -125,7 +125,7 @@ func TestSessionWithMessages(t *testing.T) {
 
 	tools := []byte(`[{"type":"function","function":{"name":"calc"}}]`)
 	toolsHash := l.StoreTools(tools)
-	sessionID, err := l.StartSession(toolsHash, "openai", 100)
+	sessionID, err := l.StartSession(toolsHash, "openai", "claude-sonnet-4-6", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,10 +138,10 @@ func TestSessionWithMessages(t *testing.T) {
 	}
 
 	// Add to session
-	if err := l.AddMessageToSession(sessionID, msg1Hash); err != nil {
+	if err := l.AddMessageToSession(sessionID, msg1Hash, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.AddMessageToSession(sessionID, msg2Hash); err != nil {
+	if err := l.AddMessageToSession(sessionID, msg2Hash, 1234); err != nil {
 		t.Fatal(err)
 	}
 
@@ -156,11 +156,20 @@ func TestSessionWithMessages(t *testing.T) {
 	if msgs[0].Body != `{"role":"user","content":"hello"}` {
 		t.Errorf("msg1 body mismatch: %q", msgs[0].Body)
 	}
+	if msgs[0].DurationMS != 0 {
+		t.Errorf("msg1 duration should be 0, got %d", msgs[0].DurationMS)
+	}
 	if msgs[1].Body != `{"role":"assistant","content":"hi"}` {
 		t.Errorf("msg2 body mismatch: %q", msgs[1].Body)
 	}
+	if msgs[1].DurationMS != 1234 {
+		t.Errorf("msg2 duration should be 1234, got %d", msgs[1].DurationMS)
+	}
 	if session.ToolsHash == nil || *session.ToolsHash != toolsHash {
 		t.Error("tools hash should be set on session")
+	}
+	if session.Model != "claude-sonnet-4-6" {
+		t.Errorf("model should be claude-sonnet-4-6, got %q", session.Model)
 	}
 }
 
@@ -188,9 +197,9 @@ func TestMessageCrossSessionDedup(t *testing.T) {
 func TestListSessions(t *testing.T) {
 	l := newTestLogger(t)
 
-	_, _ = l.StartSession("", "openai", 0)
-	_, _ = l.StartSession("", "openai", 0)
-	_, _ = l.StartSession("", "openai", 0)
+	_, _ = l.StartSession("", "openai", "claude-sonnet-4-6", 0)
+	_, _ = l.StartSession("", "anthropic", "claude-sonnet-4-6-flash", 0)
+	_, _ = l.StartSession("", "openai", "", 0)
 
 	sessions, err := l.ListSessions(7)
 	if err != nil {
@@ -198,6 +207,13 @@ func TestListSessions(t *testing.T) {
 	}
 	if len(sessions) != 3 {
 		t.Fatalf("expected 3 sessions, got %d", len(sessions))
+	}
+	expectedModels := map[string]int{"claude-sonnet-4-6": 1, "claude-sonnet-4-6-flash": 1, "": 1}
+	for _, s := range sessions {
+		delete(expectedModels, s.Model)
+	}
+	if len(expectedModels) > 0 {
+		t.Errorf("missing models: %v", expectedModels)
 	}
 }
 

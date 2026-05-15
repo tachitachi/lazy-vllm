@@ -3,6 +3,7 @@ package logger
 import (
 	_ "embed"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -17,6 +18,7 @@ func (d *DiskLogger) HandleLogsUI(w http.ResponseWriter, r *http.Request) {
 func (d *DiskLogger) HandleLogsList(w http.ResponseWriter, r *http.Request) {
 	summaries, err := d.ListLogs(7)
 	if err != nil {
+		slog.Error("list logs query failed", "err", err)
 		http.Error(w, "failed to list logs", http.StatusInternalServerError)
 		return
 	}
@@ -46,6 +48,7 @@ func (d *DiskLogger) HandleLogDetail(w http.ResponseWriter, r *http.Request) {
 func (c *CompactLogger) HandleSessionsList(w http.ResponseWriter, r *http.Request) {
 	sessions, err := c.ListSessions(7)
 	if err != nil {
+		slog.Warn("list sessions failed", "err", err)
 		http.Error(w, "failed to list sessions", http.StatusInternalServerError)
 		return
 	}
@@ -69,7 +72,7 @@ func (c *CompactLogger) HandleSessionDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if msgs == nil {
-		msgs = []CompactMessage{}
+		msgs = []CompactSessionMessage{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"session": session, "messages": msgs})

@@ -448,10 +448,14 @@ function renderSessionDetail(session, msgs) {
   }
 
   const toolsHash = session.tools_hash;
+  const modelBadge = session.model
+    ? `<span class="text-xs text-indigo-300 font-mono">${escHtml(session.model)}</span>`
+    : '';
   let html = `<div class="mb-6">
     <div class="flex flex-wrap items-center gap-3 mb-2">
       <span class="font-mono text-xs text-gray-500">${escHtml(session.id)}</span>
       <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 border border-emerald-700">compact</span>
+      ${modelBadge}
       <span class="text-xs text-gray-400">${fmtDate(session.created_at)}</span>
       <span class="text-xs text-gray-500">${msgs ? msgs.length : 0} message(s)</span>
     </div>`;
@@ -488,11 +492,13 @@ function renderSessionDetail(session, msgs) {
       for (let i = 0; i < lastIdx; i++) {
         let parsed = null;
         try { parsed = JSON.parse(msgs[i].body); } catch { parsed = null; }
+        const dur = (msgs[i].duration_ms || 0) > 0 ? `<span class="text-xs text-gray-500">${fmtDuration(msgs[i].duration_ms)}</span>` : '';
         html += `
           <div class="bg-gray-800/60 rounded border border-gray-700">
             <div class="flex items-center gap-2 px-3 py-2 border-b border-gray-700">
               <span class="text-xs font-semibold text-gray-400">#${i+1}</span>
-              <span class="font-mono text-xs text-gray-500">${escHtml(msgs[i].hash.slice(0, 12))}…</span>
+              <span class="font-mono text-xs text-gray-500">${escHtml(msgs[i].message_hash.slice(0, 12))}…</span>
+              ${dur}
               <span class="ml-auto text-xs text-gray-600">${fmtTime(msgs[i].created_at)}</span>
             </div>
             <div class="px-3 pb-3 pt-2">
@@ -506,11 +512,15 @@ function renderSessionDetail(session, msgs) {
     // Last message (expanded by default)
     let lastParsed = null;
     try { lastParsed = JSON.parse(msgs[lastIdx].body); } catch { lastParsed = null; }
+    const lastDur = (msgs[lastIdx].duration_ms || 0) > 0
+      ? `<span class="text-xs text-green-400">${fmtDuration(msgs[lastIdx].duration_ms)}</span>`
+      : '';
     html += `
       <div class="bg-gray-900 rounded border border-gray-700">
         <div class="flex items-center gap-2 px-4 py-3 border-b border-gray-700">
           <span class="text-xs font-semibold text-gray-400">#${lastIdx+1}</span>
-          <span class="font-mono text-xs text-gray-500">${escHtml(msgs[lastIdx].hash.slice(0, 12))}…</span>
+          <span class="font-mono text-xs text-gray-500">${escHtml(msgs[lastIdx].message_hash.slice(0, 12))}…</span>
+          ${lastDur}
           <span class="ml-auto text-xs text-gray-600">${fmtTime(msgs[lastIdx].created_at)}</span>
         </div>
         <div class="px-4 pb-4 pt-2">
@@ -574,12 +584,16 @@ function renderSessionsList(sessions) {
     const tokenBadge = s.token_count > 0
       ? `<span class="text-xs text-gray-500">${(s.token_count / 1000).toFixed(1)}k tok</span>`
       : '';
+    const modelBadge = s.model
+      ? `<span class="text-xs text-indigo-300 font-mono">${escHtml(s.model)}</span>`
+      : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
            onclick="selectSession('${escHtml(s.id)}')">
         <div class="flex items-center justify-between">
           <span class="flex items-center gap-1">
             <span class="text-xs ${fmtClass}">${escHtml(s.format || 'unknown')}</span>
+            ${modelBadge}
             ${toolsBadge}
             ${tokenBadge}
           </span>
@@ -636,6 +650,7 @@ async function selectSession(id) {
     document.getElementById('detail-panel').innerHTML = renderSessionDetail(data.session, data.messages);
     loadToolsBody(data.session.tools_hash);
   } catch (e) {
+    console.error(e);
     document.getElementById('detail-panel').innerHTML = '<div class="text-red-400 text-sm text-center mt-32">Failed to load session.</div>';
   }
 }

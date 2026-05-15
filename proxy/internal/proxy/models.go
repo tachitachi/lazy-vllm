@@ -22,6 +22,7 @@ var passthroughHeaders = []string{
 func (s *Server) HandleModels(w http.ResponseWriter, r *http.Request) {
 	urls := uniqueURLs(s.Backends)
 	if len(urls) == 0 {
+		slog.Error("models endpoint: no backends configured")
 		http.Error(w, "no backends configured", http.StatusBadGateway)
 		return
 	}

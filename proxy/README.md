@@ -5,15 +5,16 @@ A lightweight reverse proxy that routes OpenAI-compatible and Anthropic API requ
 ## What it does
 
 - Accepts `/v1/chat/completions` (OpenAI format) and `/v1/messages` (Anthropic format) endpoints
-- Routes requests to upstream vLLM instances based on model name prefixes
+- Routes requests to upstream vLLM instances based on model name
 - **Flash models**: Automatically exposes `-FLASH` variants of every backend model that disable thinking mode for instant responses
+- **Token-based routing**: Optionally upgrades requests to a different model when input tokens exceed a threshold
 - Captures request/response payloads to disk for debugging and observability
 - Provides a web UI to browse captured logs
 
 ## Quick start
 
 ```bash
-export BACKENDS_MAP='[{"prefix":"gemma","url":"http://localhost:8000"},{"prefix":"qwen","url":"http://localhost:8001"}]'
+export BACKENDS_MAP='[{"name":"gemma","url":"http://localhost:8000"},{"name":"qwen","url":"http://localhost:8001"}]'
 export PORT=8002
 export LOG_DIR=./logs          # optional: enable disk logging
 ./lazy-vllm-proxy
@@ -25,25 +26,36 @@ Then point any OpenAI/Anthropic SDK client at `http://localhost:8002`.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BACKENDS_MAP` | JSON array of `{prefix, url}` routing rules | **required** |
+| `BACKENDS_MAP` | JSON array of `{name, url}` backend definitions | **required** |
 | `PORT` | HTTP listen port | `8002` |
 | `LOG_DIR` | Directory for persisted request/response logs (SQLite DB) | none (disabled) |
 | `LOG_LEVEL` | Log verbosity: DEBUG, INFO, WARN, ERROR | `INFO` |
+| `ROUTING_RULES` | JSON array of `{source_model, threshold, target_model}` rules | none |
 
-`BACKENDS_MAP` is tried in order — the first rule whose `prefix` matches the request model wins.
+`BACKENDS_MAP` is matched by exact `name` — if no match, the first backend is used as fallback.
+
+### Routing Rules
+
+`ROUTING_RULES` lets you upgrade requests to a different model when the input exceeds a token threshold:
+
+```bash
+export ROUTING_RULES='[{"source_model":"claude-sonnet-4-6","threshold":32000,"target_model":"claude-opus-4-7"}]'
+```
+
+When a request for `claude-sonnet-4-6` has ≥32,000 input tokens, it gets routed to `claude-opus-4-7` instead.
 
 ## Flash Models
 
-Every backend model is automatically duplicated with a `-FLASH` suffix (e.g., `RedHatAI/Qwen3.6-35B-FLASH`). Flash requests route to the same backend but with `chat_template_kwargs: {"enable_thinking": false}` injected — disabling chain-of-thought for instant responses.
+Every backend model is automatically duplicated with a `-FLASH` suffix (e.g., `gemma-FLASH`). Flash requests route to the same backend but with `chat_template_kwargs: {"enable_thinking": false}` injected — disabling chain-of-thought for instant responses.
 
 ```bash
 # Normal (with thinking)
 curl -X POST http://localhost:8002/v1/chat/completions \
-  -d '{"model": "RedHatAI/Qwen3.6-35B", "messages": [{"role": "user", "content": "Solve this"}]}'
+  -d '{"model":"RedHatAI/Qwen3.6-35B","messages":[{"role":"user","content":"Solve this"}]}'
 
 # Flash (no thinking, instant)
 curl -X POST http://localhost:8002/v1/chat/completions \
-  -d '{"model": "RedHatAI/Qwen3.6-35B-FLASH", "messages": [{"role": "user", "content": "Solve this"}]}'
+  -d '{"model":"RedHatAI/Qwen3.6-35B-FLASH","messages":[{"role":"user","content":"Solve this"}]}'
 ```
 
 The `/v1/models` endpoint lists both original and `-FLASH` variants.
@@ -63,7 +75,8 @@ The proxy also maintains a compact logging database (`compact_logs.db`) with O(n
 
 - **Global message deduplication**: Messages are hashed by SHA256(body) — identical messages across sessions share a single row.
 - **Tools deduplication**: Tool definitions are stored once globally, referenced by hash from sessions.
-- **Session-based**: Each proxied request creates a session tracking format (OpenAI/Anthropic), token count, and tools hash.
+- **Session metadata**: Each session tracks format (OpenAI/Anthropic), model name, and token count.
+- **Message timing**: Each message in a session records its duration in milliseconds — input messages are `0`, the assistant's output message carries the upstream response latency.
 
 ## Endpoints
 
@@ -76,5 +89,12 @@ The proxy also maintains a compact logging database (`compact_logs.db`) with O(n
 | `/metrics` | GET | Prometheus metrics |
 | `/log-level` | POST | Runtime log level change (`{"level":"DEBUG"}`) |
 | `/ui/logs` | GET | Web UI for browsing captured logs |
-| `/api/logs` | GET | JSON list of captured log IDs |
+| `/api/logs` | GET | JSON list of captured log summaries |
 | `/api/logs/{id}` | GET | JSON detail of a specific log |
+| `/api/sessions` | GET | JSON list of compact logger sessions |
+| `/api/sessions/{id}` | GET | Session detail with message chain |
+| `/api/tools/{hash}` | GET | Tools JSON blob by hash |
+
+## Catch-all proxy
+
+Any unrecognized path falls through to a generic proxy handler, which forwards the request to the backend resolved by the `model` field in the request body. This lets the proxy handle arbitrary backend endpoints transparently.
