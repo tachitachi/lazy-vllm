@@ -263,6 +263,8 @@ The `log_ui.go` component serves an embedded logs browser (`ui/logs.html`) that 
 
 The logs UI is served at `/logs` with API endpoints at `/api/logs` (list) and `/api/logs/{id}` (detail) on the agent server.
 
+![Agent Logs UI](assets/agent_logs.png)
+
 ## 🐳 Claude Local (Docker-based Claude Code)
 
 `claude-local` runs Claude Code inside a Docker container pointed at your local model stack instead of Anthropic's API. It behaves identically to the `claude` CLI — same flags, same workspace, same MCP tools — but routes all inference through `localhost:8002`.
