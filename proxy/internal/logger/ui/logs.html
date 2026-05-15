@@ -617,7 +617,10 @@ function renderSessionsList(sessions) {
         ${modelLine}
         <div class="flex items-center justify-between mt-0.5">
           <span class="text-xs text-gray-600 font-mono">${escHtml(s.id.slice(0,8))}…</span>
-          <span class="text-xs text-gray-400">${fmtTime(s.created_at)}</span>
+          <span class="flex items-center gap-1">
+            <span class="text-xs text-gray-400">${fmtTime(s.created_at)}</span>
+            ${s.last_duration_ms ? `<span class="text-xs text-green-400">${fmtDuration(s.last_duration_ms)}</span>` : ''}
+          </span>
         </div>
       </div>`;
   }).join('');

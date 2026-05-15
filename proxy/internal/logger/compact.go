@@ -21,13 +21,14 @@ import (
 
 // CompactSession summarizes a stored conversation session.
 type CompactSession struct {
-	ID         string    `json:"id"`
-	Format     string    `json:"format"`
-	Model      string    `json:"model"`
-	TokenCount int       `json:"token_count"`
-	CreatedAt  time.Time `json:"created_at"`
-	MessageCt  int       `json:"message_count"`
-	ToolsHash  *string   `json:"tools_hash,omitempty"`
+	ID             string    `json:"id"`
+	Format         string    `json:"format"`
+	Model          string    `json:"model"`
+	TokenCount     int       `json:"token_count"`
+	CreatedAt      time.Time `json:"created_at"`
+	MessageCt      int       `json:"message_count"`
+	LastDurationMS *int64    `json:"last_duration_ms,omitempty"`
+	ToolsHash      *string   `json:"tools_hash,omitempty"`
 }
 
 // CompactSessionMessage holds a message reference within a session.
@@ -254,16 +255,16 @@ func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSession
 
 // ListSessions returns recent sessions (last n days).
 func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
-	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
-	rows, err := c.db.QueryContext(context.Background(),
-		`SELECT s.id, s.format, s.model, s.token_count, s.tools_hash, s.created_at, COUNT(sm.message_hash)
+	latestDuration := `(SELECT sm2.duration_ms FROM session_messages sm2 WHERE sm2.session_id = s.id ORDER BY sm2.sequence DESC LIMIT 1)`
+	query := `SELECT s.id, s.format, s.model, s.token_count, s.tools_hash, s.created_at, COUNT(sm.message_hash),` + latestDuration + `
 		 FROM sessions s
 		 LEFT JOIN session_messages sm ON sm.session_id = s.id
 		 WHERE s.created_at >= ?
 		 GROUP BY s.id
-		 ORDER BY s.created_at DESC`,
-		cutoff,
-	)
+		 ORDER BY s.created_at DESC`
+
+	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
+	rows, err := c.db.QueryContext(context.Background(), query, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -273,10 +274,12 @@ func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 	for rows.Next() {
 		var s CompactSession
 		var created float64
-		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &s.ToolsHash, &created, &s.MessageCt); err != nil {
+		var lastDuration *int64
+		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &s.ToolsHash, &created, &s.MessageCt, &lastDuration); err != nil {
 			continue
 		}
 		s.CreatedAt = time.UnixMilli(int64(created))
+		s.LastDurationMS = lastDuration
 		sessions = append(sessions, s)
 	}
 	return sessions, nil
