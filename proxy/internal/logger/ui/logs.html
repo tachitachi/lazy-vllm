@@ -567,6 +567,7 @@ function renderSessionsList(sessions) {
   return sessions.map(s => {
     const isSelected = s.id === selectedId;
     const sel = isSelected ? 'bg-indigo-900/40 border-indigo-500' : 'border-transparent hover:bg-gray-800/50';
+    const fmtClass = s.format === 'anthropic' ? 'text-purple-400' : 'text-cyan-400';
     const toolsBadge = s.tools_hash
       ? `<span class="text-xs text-amber-400">⚙</span>`
       : '';
@@ -578,7 +579,7 @@ function renderSessionsList(sessions) {
            onclick="selectSession('${escHtml(s.id)}')">
         <div class="flex items-center justify-between">
           <span class="flex items-center gap-1">
-            <span class="text-xs text-emerald-400">${escHtml(s.format || 'unknown')}</span>
+            <span class="text-xs ${fmtClass}">${escHtml(s.format || 'unknown')}</span>
             ${toolsBadge}
             ${tokenBadge}
           </span>
