@@ -584,8 +584,8 @@ function renderSessionsList(sessions) {
     const tokenBadge = s.token_count > 0
       ? `<span class="text-xs text-gray-500">${(s.token_count / 1000).toFixed(1)}k tok</span>`
       : '';
-    const modelBadge = s.model
-      ? `<span class="text-xs text-indigo-300 font-mono">${escHtml(s.model)}</span>`
+    const modelLine = s.model
+      ? `<div class="text-xs text-indigo-300 font-mono truncate">${escHtml(s.model)}</div>`
       : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
@@ -593,14 +593,16 @@ function renderSessionsList(sessions) {
         <div class="flex items-center justify-between">
           <span class="flex items-center gap-1">
             <span class="text-xs ${fmtClass}">${escHtml(s.format || 'unknown')}</span>
-            ${modelBadge}
             ${toolsBadge}
             ${tokenBadge}
           </span>
           <span class="text-xs text-gray-500">${s.message_count} msg(s)</span>
         </div>
-        <div class="text-xs text-gray-400 mt-0.5">${fmtTime(s.created_at)}</div>
-        <div class="text-xs text-gray-600 mt-0.5 font-mono">${escHtml(s.id.slice(0,8))}…</div>
+        ${modelLine}
+        <div class="flex items-center justify-between mt-0.5">
+          <span class="text-xs text-gray-600 font-mono">${escHtml(s.id.slice(0,8))}…</span>
+          <span class="text-xs text-gray-400">${fmtTime(s.created_at)}</span>
+        </div>
       </div>`;
   }).join('');
 }
