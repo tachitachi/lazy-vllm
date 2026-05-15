@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM ubuntu:24.04
 
 # Core tools: Go, Node, Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -6,8 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Detect arch and install Go 1.26.2
     ARCH=$(dpkg --print-architecture | sed 's/amd64/amd64/; s/arm64/arm64/') && \
     curl -sL "https://dl.google.com/go/go1.26.2.linux-${ARCH}.tar.gz" | tar xz -C /usr/local && \
-    # Node.js 20.x via nodesource
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    # Node.js 24.x via nodesource
+    curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && \
     apt-get install -y nodejs && \
     # Python 3
     apt-get install -y python3 python3-pip && \
@@ -20,19 +20,24 @@ RUN git config --global --add safe.directory '*'
 # Install Claude Code via npm globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create non-root user and set up directories
-RUN groupadd -g 1000 appuser && \
-    useradd -m -u 1000 -g appuser -s /bin/bash appuser && \
-    chown -R appuser:appuser /workspace /root && \
+# Install RTK to a system path so it persists across the /home/ubuntu volume mount
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | RTK_INSTALL_DIR=/usr/local/bin sh
+
+# ubuntu:24.04 ships with a 'ubuntu' user at UID/GID 1000 — reuse it
+RUN mkdir -p /workspace && \
+    chown ubuntu:ubuntu /workspace && \
     chmod -R 755 /root
 
-ENV PATH="/usr/local/go/bin:/home/appuser/.npm-global/bin:$PATH"
-ENV GOPATH="/home/appuser/go"
+ENV PATH="/usr/local/go/bin:/home/ubuntu/.npm-global/bin:$PATH"
+ENV GOPATH="/home/ubuntu/go"
 
 # Default working directory for mounted workspace
 WORKDIR /workspace
 
 # Switch to non-root user
-USER appuser
+USER ubuntu
 
+COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["claude"]

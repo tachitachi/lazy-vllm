@@ -21,17 +21,17 @@ HOST_GID=$(id -g)
 # -v go-cache: persist Go module cache across sessions.
 docker run -it --rm --network host \
     -u "$HOST_UID:$HOST_GID" \
-    -e HOME=/home/appuser \
+    -e HOME=/home/ubuntu \
     -v "$(pwd):/workspace" \
-    -v claude-home:/home/appuser \
-    -v claude-npm-cache:/home/appuser/.npm \
-    -v claude-cache:/home/appuser/.cache \
-    -v claude-go-cache:/home/appuser/go/pkg/mod \
+    -v claude-home:/home/ubuntu \
+    -v claude-npm-cache:/home/ubuntu/.npm \
+    -v claude-cache:/home/ubuntu/.cache \
+    -v claude-go-cache:/home/ubuntu/go/pkg/mod \
     -e ANTHROPIC_BASE_URL=http://localhost:8002 \
     -e ANTHROPIC_API_KEY=dummy \
     -e ANTHROPIC_AUTH_TOKEN=dummy \
     -e ANTHROPIC_DEFAULT_OPUS_MODEL=Qwen3.6-27B-Text-NVFP4-MTP \
-    -e ANTHROPIC_DEFAULT_SONNET_MODEL=Qwen3.6-27B-Text-NVFP4-MTP \
+    -e ANTHROPIC_DEFAULT_SONNET_MODEL=Qwen3.6-35B-A3B-NVFP4-FLASH \
     -e ANTHROPIC_DEFAULT_HAIKU_MODEL=Qwen3.6-35B-A3B-NVFP4-FLASH \
     -e CLAUDE_CODE_AUTO_COMPACT_WINDOW=262144 \
     -e GIT_CONFIG_COUNT=3 \
