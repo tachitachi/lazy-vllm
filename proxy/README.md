@@ -78,6 +78,8 @@ The proxy also maintains a compact logging database (`compact_logs.db`) with O(n
 - **Session metadata**: Each session tracks format (OpenAI/Anthropic), model name, and token count.
 - **Message timing**: Each message in a session records its duration in milliseconds — input messages are `0`, the assistant's output message carries the upstream response latency.
 
+![Agent Logs UI](../assets/agent_logs.png)
+
 ## Endpoints
 
 | Path | Method | Description |
