@@ -28,4 +28,4 @@ with open(path, "w") as f:
     json.dump(settings, f, indent=2)
 EOF
 
-exec "$@"
+exec claude "$@"
