@@ -52,6 +52,19 @@
         display: block;
       }
     }
+    #scroll-to-top {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 50;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s, visibility 0.2s;
+    }
+    #scroll-to-top.visible {
+      opacity: 1;
+      visibility: visible;
+    }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-200 h-screen flex flex-col overflow-hidden">
@@ -96,6 +109,9 @@
 
   <!-- Mobile overlay (shown when sidebar is open on mobile) -->
   <div id="mobile-overlay" onclick="closeSidebar()"></div>
+
+  <!-- Scroll to top button -->
+  <button id="scroll-to-top" class="bg-gray-800 hover:bg-gray-700 text-gray-300 p-2 rounded-full shadow-lg border border-gray-600" onclick="scrollToTop()" aria-label="Scroll to top">↑</button>
 
 <script>
 let selectedId = null;
@@ -689,6 +705,24 @@ function copyToClipboard(btn, elementId) {
   }).catch(err => console.error('Copy failed:', err));
 }
 
+// ── Scroll to top ────────────────────────────────────────────
+
+function scrollToTop() {
+  document.getElementById('detail-panel').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setupScrollToTop() {
+  const btn = document.getElementById('scroll-to-top');
+  const panel = document.getElementById('detail-panel');
+  panel.addEventListener('scroll', () => {
+    if (panel.scrollTop > 300) {
+      btn.classList.add('visible');
+    } else {
+      btn.classList.remove('visible');
+    }
+  }, { passive: true });
+}
+
 // ── Status & Refresh ─────────────────────────────────────────
 
 function setStatus(ok) {
@@ -739,6 +773,7 @@ document.getElementById('refresh-btn').addEventListener('click', () => {
 });
 
 setupAutoRefresh();
+setupScrollToTop();
 loadLogsList();
 </script>
 </body>
