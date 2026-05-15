@@ -34,3 +34,5 @@ WORKDIR /workspace
 
 # Switch to non-root user
 USER appuser
+
+CMD ["claude"]

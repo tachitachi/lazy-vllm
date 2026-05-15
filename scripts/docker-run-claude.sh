@@ -22,7 +22,7 @@ HOST_GID=$(id -g)
 docker run -it --rm --network host \
     -u "$HOST_UID:$HOST_GID" \
     -e HOME=/home/appuser \
-    -v "$SCRIPT_DIR:/workspace" \
+    -v "$(pwd):/workspace" \
     -v claude-home:/home/appuser \
     -v claude-npm-cache:/home/appuser/.npm \
     -v claude-cache:/home/appuser/.cache \
