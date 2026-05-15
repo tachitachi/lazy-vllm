@@ -20,8 +20,17 @@ RUN git config --global --add safe.directory '*'
 # Install Claude Code via npm globally
 RUN npm install -g @anthropic-ai/claude-code
 
-ENV PATH="/usr/local/go/bin:/root/.npm-global/bin:$PATH"
-ENV GOPATH="/root/go"
+# Create non-root user and set up directories
+RUN groupadd -g 1000 appuser && \
+    useradd -m -u 1000 -g appuser -s /bin/bash appuser && \
+    chown -R appuser:appuser /workspace /root && \
+    chmod -R 755 /root
+
+ENV PATH="/usr/local/go/bin:/home/appuser/.npm-global/bin:$PATH"
+ENV GOPATH="/home/appuser/go"
 
 # Default working directory for mounted workspace
 WORKDIR /workspace
+
+# Switch to non-root user
+USER appuser

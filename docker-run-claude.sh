@@ -10,15 +10,23 @@ if ! docker inspect "$IMAGE" >/dev/null 2>&1; then
     docker build -f "$SCRIPT_DIR/Dockerfile.claude" -t "$IMAGE" "$SCRIPT_DIR"
 fi
 
+# Detect host user/group for -u flag (bind mount files need matching ownership)
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+
 # Run Claude Code in Docker.
 # --network host: container sees host localhost:8002 directly.
 # -v ...:/workspace: bind mount so IDE edits sync with the container.
 # -v claude-config: persist Claude Code session data across restarts.
 # -v go-cache: persist Go module cache across sessions.
 docker run -it --rm --network host \
+    -u "$HOST_UID:$HOST_GID" \
+    -e HOME=/home/appuser \
     -v "$SCRIPT_DIR:/workspace" \
-    -v claude-config:/root/.claude \
-    -v go-cache:/root/go/pkg/mod \
+    -v claude-home:/home/appuser \
+    -v claude-npm-cache:/home/appuser/.npm \
+    -v claude-cache:/home/appuser/.cache \
+    -v claude-go-cache:/home/appuser/go/pkg/mod \
     -e ANTHROPIC_BASE_URL=http://localhost:8002 \
     -e ANTHROPIC_API_KEY=dummy \
     -e ANTHROPIC_AUTH_TOKEN=dummy \
