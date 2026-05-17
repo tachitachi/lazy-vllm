@@ -42,19 +42,26 @@ func uniqueURLs(backends []config.Backend) []string {
 	return urls
 }
 
-// extractModel returns the model name from a request body, or "".
-func extractModel(body []byte) string {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(body, &top); err != nil {
-		return ""
+// extractModel returns the model name from the request body and a cleaned body.
+// For -FLASH models, the cleaned body has the model field updated to strip the suffix.
+func extractModel(body []byte) (string, []byte) {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return "", body
 	}
-	if m, ok := top["model"]; ok {
-		var model string
-		if err := json.Unmarshal(m, &model); err == nil {
-			return model
+	model, ok := obj["model"].(string)
+	if !ok || model == "" {
+		return "", body
+	}
+	if strings.HasSuffix(model, flashSuffix) {
+		obj["model"] = strings.TrimSuffix(model, flashSuffix)
+		cleaned, _ := json.Marshal(obj)
+		if len(cleaned) == 0 {
+			cleaned = body
 		}
+		return model, cleaned
 	}
-	return ""
+	return model, body
 }
 
 const flashSuffix = "-FLASH"

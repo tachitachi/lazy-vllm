@@ -104,19 +104,28 @@ func TestUniqueURLs(t *testing.T) {
 
 func TestExtractModel(t *testing.T) {
 	tests := []struct {
-		name string
-		body []byte
-		want string
+		name   string
+		body   []byte
+		want   string
+		wantModel string // expected model field in the cleaned body
 	}{
 		{
-			name: "openai format",
-			body: []byte(`{"model":"gemma-3-4b","messages":[],"stream":false}`),
-			want: "gemma-3-4b",
+			name:      "openai format",
+			body:      []byte(`{"model":"gemma-3-4b","messages":[],"stream":false}`),
+			want:      "gemma-3-4b",
+			wantModel: "gemma-3-4b",
 		},
 		{
-			name: "openai stream",
-			body: []byte(`{"model":"qwen-3-8b","messages":[],"stream":true}`),
-			want: "qwen-3-8b",
+			name:      "openai stream",
+			body:      []byte(`{"model":"qwen-3-8b","messages":[],"stream":true}`),
+			want:      "qwen-3-8b",
+			wantModel: "qwen-3-8b",
+		},
+		{
+			name:      "flash model strips suffix in body",
+			body:      []byte(`{"model":"qwen3.6-FLASH","messages":[],"stream":false}`),
+			want:      "qwen3.6-FLASH",
+			wantModel: "qwen3.6",
 		},
 		{
 			name: "missing model",
@@ -152,9 +161,17 @@ func TestExtractModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := extractModel(tt.body)
+			got, cleanedBody := extractModel(tt.body)
 			if got != tt.want {
 				t.Errorf("extractModel(%q) = %q, want %q", tt.body, got, tt.want)
+			}
+			if tt.wantModel != "" {
+				var obj map[string]any
+				if err := json.Unmarshal(cleanedBody, &obj); err != nil {
+					t.Errorf("failed to unmarshal cleaned body: %v", err)
+				} else if model, ok := obj["model"].(string); !ok || model != tt.wantModel {
+					t.Errorf("cleaned body model = %q, want %q", model, tt.wantModel)
+				}
 			}
 		})
 	}

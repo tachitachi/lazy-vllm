@@ -67,17 +67,17 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 func (s *Server) HandleChatCompletions(
 	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger,
 ) {
-	model := extractModel(body)
+	model, cleanedBody := extractModel(body)
 	backendURL := resolveBackend(s.Backends, stripFlash(model))
-	tokenCount := s.countOpenAITokens(backendURL, body)
-	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount)
+	tokenCount := s.countOpenAITokens(backendURL, cleanedBody)
+	s.forwardWithLogging(w, r, cleanedBody, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model))
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger) {
-	model := extractModel(body)
+	model, cleanedBody := extractModel(body)
 	backendURL := resolveBackend(s.Backends, stripFlash(model))
-	tokenCount := s.countAnthropicTokens(backendURL, body)
-	s.forwardWithLogging(w, r, body, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount)
+	tokenCount := s.countAnthropicTokens(backendURL, cleanedBody)
+	s.forwardWithLogging(w, r, cleanedBody, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model))
 }
 
 func (s *Server) forwardWithLogging(
@@ -90,16 +90,15 @@ func (s *Server) forwardWithLogging(
 	msgParser messageParser,
 	outParser outputParser,
 	tokenCount int,
+	model string,
+	isFlash bool,
 ) {
-	model := extractModel(body)
-	// Handle flash models: strip suffix for routing, inject kwargs in body
-	flash := isFlashModel(model)
-	baseURL := resolveBackend(s.Backends, stripFlash(model))
-
 	bodyToForward := body
-	if flash {
+	if isFlash {
 		bodyToForward = injectDisableThinking(body)
 	}
+
+	baseURL := resolveBackend(s.Backends, stripFlash(model))
 
 	var req struct {
 		Stream bool `json:"stream"`
@@ -183,9 +182,9 @@ func (s *Server) forwardWithLogging(
 }
 
 func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body []byte) {
-	model := extractModel(body)
+	model, cleanedBody := extractModel(body)
 	baseURL := resolveBackend(s.Backends, stripFlash(model))
-	bodyToForward := body
+	bodyToForward := cleanedBody
 	if isFlashModel(model) {
 		bodyToForward = injectDisableThinking(body)
 	}
