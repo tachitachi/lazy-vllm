@@ -7,6 +7,32 @@ import (
 	"strings"
 )
 
+type Message struct {
+	Role             string          `json:"role"`
+	Content          json.RawMessage `json:"content,omitempty"`
+	ReasoningContent string          `json:"reasoning,omitempty"`
+	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
+	ToolCallID       string          `json:"tool_call_id,omitempty"`
+	Name             string          `json:"name,omitempty"`
+}
+
+type ToolCall struct {
+	ID       string   `json:"id,omitempty"`
+	Type     string   `json:"type,omitempty"`
+	Function ToolFunc `json:"function"`
+}
+
+type ToolFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type OutputLog struct {
+	Reasoning string     `json:"reasoning,omitempty"`
+	Content   string     `json:"content,omitempty"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+}
+
 // ExtractTools extracts the "tools" array from a request body (OpenAI or Anthropic format).
 // Both APIs use the same top-level key "tools". Returns canonical (minified) JSON,
 // or [] if no tools are present.

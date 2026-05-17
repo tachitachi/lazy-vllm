@@ -65,7 +65,7 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) HandleChatCompletions(
-	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger,
+	w http.ResponseWriter, r *http.Request, body []byte, compactLogger *logger.CompactLogger,
 ) {
 	model, cleanedBody := extractModel(body)
 	backend := findBackend(s.Backends, stripFlash(model))
@@ -73,24 +73,23 @@ func (s *Server) HandleChatCompletions(
 	if backend.CountTokens {
 		tokenCount = s.countOpenAITokens(backend.URL, cleanedBody)
 	}
-	s.forwardWithLogging(w, r, cleanedBody, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model))
+	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model))
 }
 
-func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger) {
+func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, compactLogger *logger.CompactLogger) {
 	model, cleanedBody := extractModel(body)
 	backend := findBackend(s.Backends, stripFlash(model))
 	tokenCount := 0
 	if backend.CountTokens {
 		tokenCount = s.countAnthropicTokens(backend.URL, cleanedBody)
 	}
-	s.forwardWithLogging(w, r, cleanedBody, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model))
+	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model))
 }
 
 func (s *Server) forwardWithLogging(
 	w http.ResponseWriter,
 	r *http.Request,
 	body []byte,
-	diskLogger *logger.DiskLogger,
 	compactLogger *logger.CompactLogger,
 	format string,
 	msgParser messageParser,
@@ -129,7 +128,7 @@ func (s *Server) forwardWithLogging(
 		baseURL = resolveBackend(s.Backends, targetModel)
 	}
 
-	if diskLogger == nil && compactLogger == nil {
+	if compactLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, bodyToForward)
 		return
 	}
@@ -158,22 +157,13 @@ func (s *Server) forwardWithLogging(
 		}
 	}
 
-	var reqLog *logger.RequestLog
-	if diskLogger != nil {
-		reqLog = diskLogger.Start(format, r.URL.Path, r.Header, bodyToForward)
-		defer diskLogger.Save(reqLog)
-	}
-
 	rc := &responseCapture{ResponseWriter: w}
 	forwardStart := time.Now()
 	forwardRequest(r.Context(), rc, r, baseURL, bodyToForward)
 	durationMS := time.Since(forwardStart).Milliseconds()
-	if reqLog != nil {
-		reqLog.SetCall(msgParser(body), outParser(rc.buf.Bytes(), req.Stream))
-	}
 
 	// Store the output message (globally deduplicated).
-	if compactLogger != nil && sessionID != "" {
+	if sessionID != "" {
 		output := outParser(rc.buf.Bytes(), req.Stream)
 		outputBody, _ := json.Marshal(map[string]any{
 			"role":       "assistant",
