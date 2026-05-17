@@ -18,10 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git config --global --add safe.directory '*'
 
 # Install Claude Code via npm globally
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic-ai/claude-code@2.1.143
 
 # Install RTK to a system path so it persists across the /home/ubuntu volume mount
-RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | RTK_INSTALL_DIR=/usr/local/bin sh
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/tags/v0.40.0/install.sh | RTK_INSTALL_DIR=/usr/local/bin sh
 
 # ubuntu:24.04 ships with a 'ubuntu' user at UID/GID 1000 — reuse it
 RUN mkdir -p /workspace && \
