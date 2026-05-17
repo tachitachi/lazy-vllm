@@ -11,7 +11,7 @@ RUN go build -ldflags="-s -w" -o proxy .
 
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates curl
 
 WORKDIR /app
 

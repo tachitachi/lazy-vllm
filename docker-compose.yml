@@ -257,6 +257,12 @@ services:
       PORT: "8002"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_DIR: /logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     volumes:
       - ./agent-logs:/logs
     restart: always
@@ -290,6 +296,12 @@ services:
     image: utkuozdemir/nvidia_gpu_exporter:1.4.1
     ports:
       - "9835:9835"
+    healthcheck:
+      test: ["CMD", "nvidia-smi"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         reservations:
