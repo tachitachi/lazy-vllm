@@ -18,15 +18,21 @@ type Server struct {
 // resolveBackend returns the upstream URL for a given model name.
 // If no exact match is found, falls back to the first backend.
 func resolveBackend(backends []config.Backend, model string) string {
-	for _, r := range backends {
-		if r.Name == model {
-			return r.URL
+	return findBackend(backends, model).URL
+}
+
+// findBackend returns the Backend for a given model name.
+// If no exact match is found, falls back to the first backend.
+func findBackend(backends []config.Backend, model string) config.Backend {
+	for _, b := range backends {
+		if b.Name == model {
+			return b
 		}
 	}
 	if len(backends) > 0 {
-		return backends[0].URL
+		return backends[0]
 	}
-	return ""
+	return config.Backend{}
 }
 
 // uniqueURLs returns distinct backend URLs, preserving insertion order.

@@ -68,15 +68,21 @@ func (s *Server) HandleChatCompletions(
 	w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger,
 ) {
 	model, cleanedBody := extractModel(body)
-	backendURL := resolveBackend(s.Backends, stripFlash(model))
-	tokenCount := s.countOpenAITokens(backendURL, cleanedBody)
+	backend := findBackend(s.Backends, stripFlash(model))
+	tokenCount := 0
+	if backend.CountTokens {
+		tokenCount = s.countOpenAITokens(backend.URL, cleanedBody)
+	}
 	s.forwardWithLogging(w, r, cleanedBody, diskLogger, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model))
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, diskLogger *logger.DiskLogger, compactLogger *logger.CompactLogger) {
 	model, cleanedBody := extractModel(body)
-	backendURL := resolveBackend(s.Backends, stripFlash(model))
-	tokenCount := s.countAnthropicTokens(backendURL, cleanedBody)
+	backend := findBackend(s.Backends, stripFlash(model))
+	tokenCount := 0
+	if backend.CountTokens {
+		tokenCount = s.countAnthropicTokens(backend.URL, cleanedBody)
+	}
 	s.forwardWithLogging(w, r, cleanedBody, diskLogger, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model))
 }
 

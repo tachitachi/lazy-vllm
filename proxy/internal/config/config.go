@@ -42,8 +42,9 @@ func ParseLogLevel(s string) slog.Level {
 
 // Backend maps one BACKENDS_MAP entry.
 type Backend struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	CountTokens bool   `json:"count_tokens"`
 }
 
 // RouteRule maps one ROUTING_RULES entry.
