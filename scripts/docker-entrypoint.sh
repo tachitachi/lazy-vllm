@@ -28,4 +28,10 @@ with open(path, "w") as f:
     json.dump(settings, f, indent=2)
 EOF
 
-exec claude "$@"
+# When $@ is just "claude" (the default CMD), don't pass it — that would run `claude claude`.
+# When $@ is empty or contains real args, pass it through.
+if [[ $# -eq 1 && "$1" == "claude" ]]; then
+    exec claude
+else
+    exec claude "$@"
+fi
