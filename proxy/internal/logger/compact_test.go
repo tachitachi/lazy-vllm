@@ -235,6 +235,82 @@ func TestGetTools(t *testing.T) {
 	}
 }
 
+func TestSetSessionSummary(t *testing.T) {
+	l := newTestLogger(t)
+
+	sessionID, err := l.StartSession("", "anthropic", "claude-sonnet-4-6", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Summary is nil before being set.
+	session, _, err := l.GetSession(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Summary != nil {
+		t.Errorf("expected nil summary before set, got %q", *session.Summary)
+	}
+
+	// Set summary and verify it's stored.
+	want := "User asked about 2+2. Answered 4."
+	if err := l.SetSessionSummary(sessionID, want); err != nil {
+		t.Fatal(err)
+	}
+
+	session, _, err = l.GetSession(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Summary == nil {
+		t.Fatal("expected summary to be set, got nil")
+	}
+	if *session.Summary != want {
+		t.Errorf("summary mismatch: got %q, want %q", *session.Summary, want)
+	}
+}
+
+func TestListSessions_IncludesSummary(t *testing.T) {
+	l := newTestLogger(t)
+
+	idWithSummary, err := l.StartSession("", "anthropic", "claude-sonnet-4-6", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = l.StartSession("", "anthropic", "claude-sonnet-4-6", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "Did something useful."
+	if err := l.SetSessionSummary(idWithSummary, want); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := l.ListSessions(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, s := range sessions {
+		if s.ID == idWithSummary {
+			if s.Summary == nil {
+				t.Fatal("expected summary on session, got nil")
+			}
+			if *s.Summary != want {
+				t.Errorf("summary mismatch: got %q, want %q", *s.Summary, want)
+			}
+			found = true
+		} else if s.Summary != nil {
+			t.Errorf("session %q should have nil summary, got %q", s.ID, *s.Summary)
+		}
+	}
+	if !found {
+		t.Error("session with summary not found in list")
+	}
+}
+
 func TestNewCompact_TempDir(t *testing.T) {
 	dir := t.TempDir()
 	l, err := NewCompact(dir)

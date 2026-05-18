@@ -29,6 +29,7 @@ type CompactSession struct {
 	MessageCt      int       `json:"message_count"`
 	LastDurationMS *int64    `json:"last_duration_ms,omitempty"`
 	ToolsHash      *string   `json:"tools_hash,omitempty"`
+	Summary        *string   `json:"summary,omitempty"`
 }
 
 // CompactSessionMessage holds a message reference within a session.
@@ -93,6 +94,7 @@ func NewCompact(logDir string) (*CompactLogger, error) {
 			model       TEXT    NOT NULL DEFAULT '',
 			token_count INTEGER NOT NULL DEFAULT 0,
 			tools_hash  TEXT,
+			summary     TEXT,
 			created_at  REAL    NOT NULL,
 			FOREIGN KEY(tools_hash) REFERENCES tools(hash)
 		)`,
@@ -113,6 +115,9 @@ func NewCompact(logDir string) (*CompactLogger, error) {
 			return nil, fmt.Errorf("compact logger: create schema: %w", err)
 		}
 	}
+
+	// Migrate existing DBs: add summary column if missing (ignore error on duplicate).
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN summary TEXT`)
 
 	return &CompactLogger{db: db}, nil
 }
@@ -210,6 +215,15 @@ func (c *CompactLogger) AddMessageToSession(sessionID, messageHash string, durat
 	return err
 }
 
+// SetSessionSummary stores the extracted memory observation for a session.
+func (c *CompactLogger) SetSessionSummary(sessionID, summary string) error {
+	_, err := c.db.ExecContext(context.Background(),
+		`UPDATE sessions SET summary = ? WHERE id = ?`,
+		summary, sessionID,
+	)
+	return err
+}
+
 // GetSession reconstructs a conversation, returning messages in order with session metadata.
 func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSessionMessage, error) {
 	// Get session metadata
@@ -217,9 +231,9 @@ func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSession
 	var toolsHashPtr *string
 	var created float64
 	err := c.db.QueryRowContext(context.Background(),
-		`SELECT id, format, model, token_count, tools_hash, created_at FROM sessions WHERE id = ?`,
+		`SELECT id, format, model, token_count, tools_hash, summary, created_at FROM sessions WHERE id = ?`,
 		id,
-	).Scan(&session.ID, &session.Format, &session.Model, &session.TokenCount, &toolsHashPtr, &created)
+	).Scan(&session.ID, &session.Format, &session.Model, &session.TokenCount, &toolsHashPtr, &session.Summary, &created)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -256,7 +270,7 @@ func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSession
 // ListSessions returns recent sessions (last n days).
 func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 	latestDuration := `(SELECT sm2.duration_ms FROM session_messages sm2 WHERE sm2.session_id = s.id ORDER BY sm2.sequence DESC LIMIT 1)`
-	query := `SELECT s.id, s.format, s.model, s.token_count, s.tools_hash, s.created_at, COUNT(sm.message_hash),` + latestDuration + `
+	query := `SELECT s.id, s.format, s.model, s.token_count, s.tools_hash, s.summary, s.created_at, COUNT(sm.message_hash),` + latestDuration + `
 		 FROM sessions s
 		 LEFT JOIN session_messages sm ON sm.session_id = s.id
 		 WHERE s.created_at >= ?
@@ -275,7 +289,7 @@ func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 		var s CompactSession
 		var created float64
 		var lastDuration *int64
-		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &s.ToolsHash, &created, &s.MessageCt, &lastDuration); err != nil {
+		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &s.ToolsHash, &s.Summary, &created, &s.MessageCt, &lastDuration); err != nil {
 			continue
 		}
 		s.CreatedAt = time.UnixMilli(int64(created))

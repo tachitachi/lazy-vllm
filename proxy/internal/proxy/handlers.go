@@ -180,8 +180,10 @@ func (s *Server) forwardWithLogging(
 		}
 	}
 
-	if memContent != "" {
-		slog.Info("memory observation", "session_id", sessionID, "content", memContent)
+	if memContent != "" && sessionID != "" {
+		if err := compactLogger.SetSessionSummary(sessionID, memContent); err != nil {
+			slog.Warn("compact logger: set session summary failed", "err", err)
+		}
 	}
 }
 
