@@ -23,7 +23,7 @@ const (
 )
 
 // systemReminderEnabled is read once at startup from the environment.
-var systemReminderEnabled = os.Getenv("ENABLE_SYSTEM_REMINDER") != ""
+var systemReminderEnabled = os.Getenv("ENABLE_SYSTEM_REMINDER") == "true"
 
 type captureState int
 
@@ -484,6 +484,20 @@ func injectMemoryInstruction(body []byte, format string) []byte {
 	return body
 }
 
+// hasToolResult reports whether a content block array contains any tool_result
+// blocks. Such messages are Anthropic's mechanism for returning tool outputs
+// and should not have the reminder injected into them.
+func hasToolResult(blocks []map[string]json.RawMessage) bool {
+	for _, block := range blocks {
+		var blockType string
+		json.Unmarshal(block["type"], &blockType) //nolint:errcheck
+		if blockType == "tool_result" {
+			return true
+		}
+	}
+	return false
+}
+
 func injectAnthropicUserReminder(body []byte) []byte {
 	reminder := memoryUserReminder
 	var obj map[string]json.RawMessage
@@ -494,34 +508,36 @@ func injectAnthropicUserReminder(body []byte) []byte {
 	if err := json.Unmarshal(obj["messages"], &messages); err != nil {
 		return body
 	}
-	lastUser := -1
-	for i := len(messages) - 1; i >= 0; i-- {
+	modified := false
+	for i, msg := range messages {
 		var role string
-		json.Unmarshal(messages[i]["role"], &role) //nolint:errcheck
-		if role == "user" {
-			lastUser = i
-			break
+		json.Unmarshal(msg["role"], &role) //nolint:errcheck
+		if role != "user" {
+			continue
 		}
+		var contentStr string
+		if err := json.Unmarshal(msg["content"], &contentStr); err == nil {
+			messages[i]["content"] = rawJSON(reminder + contentStr)
+			modified = true
+			continue
+		}
+		var blocks []map[string]json.RawMessage
+		if err := json.Unmarshal(msg["content"], &blocks); err != nil {
+			continue
+		}
+		if hasToolResult(blocks) {
+			continue
+		}
+		reminderBlock := map[string]json.RawMessage{
+			"type": rawJSON("text"),
+			"text": rawJSON(reminder),
+		}
+		messages[i]["content"] = rawJSON(append([]map[string]json.RawMessage{reminderBlock}, blocks...))
+		modified = true
 	}
-	if lastUser == -1 {
+	if !modified {
 		return body
 	}
-	var contentStr string
-	if err := json.Unmarshal(messages[lastUser]["content"], &contentStr); err == nil {
-		messages[lastUser]["content"] = rawJSON(reminder + contentStr)
-		obj["messages"] = rawJSON(messages)
-		return repack(obj, body)
-	}
-	var blocks []map[string]json.RawMessage
-	if err := json.Unmarshal(messages[lastUser]["content"], &blocks); err != nil {
-		return body
-	}
-	reminderBlock := map[string]json.RawMessage{
-		"type": rawJSON("text"),
-		"text": rawJSON(reminder),
-	}
-	blocks = append([]map[string]json.RawMessage{reminderBlock}, blocks...)
-	messages[lastUser]["content"] = rawJSON(blocks)
 	obj["messages"] = rawJSON(messages)
 	return repack(obj, body)
 }
@@ -536,21 +552,24 @@ func injectOpenAIUserReminder(body []byte) []byte {
 	if err := json.Unmarshal(obj["messages"], &messages); err != nil {
 		return body
 	}
-	lastUser := -1
-	for i := len(messages) - 1; i >= 0; i-- {
+	modified := false
+	for i, msg := range messages {
 		var role string
-		json.Unmarshal(messages[i]["role"], &role) //nolint:errcheck
-		if role == "user" {
-			lastUser = i
-			break
+		json.Unmarshal(msg["role"], &role) //nolint:errcheck
+		if role != "user" {
+			continue
 		}
+		var content string
+		if err := json.Unmarshal(msg["content"], &content); err != nil {
+			// Non-string content (e.g. multimodal array) — skip.
+			continue
+		}
+		messages[i]["content"] = rawJSON(reminder + content)
+		modified = true
 	}
-	if lastUser == -1 {
+	if !modified {
 		return body
 	}
-	var content string
-	json.Unmarshal(messages[lastUser]["content"], &content) //nolint:errcheck
-	messages[lastUser]["content"] = rawJSON(reminder + content)
 	obj["messages"] = rawJSON(messages)
 	return repack(obj, body)
 }

@@ -402,7 +402,7 @@ func TestInjectUserReminder_Anthropic_ArrayContent(t *testing.T) {
 	}
 }
 
-func TestInjectUserReminder_Anthropic_LastUserMessage(t *testing.T) {
+func TestInjectUserReminder_Anthropic_AllUserMessages(t *testing.T) {
 	body := `{"model":"claude","messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}]}`
 	out := injectAnthropicUserReminder([]byte(body))
 
@@ -413,15 +413,56 @@ func TestInjectUserReminder_Anthropic_LastUserMessage(t *testing.T) {
 	var messages []map[string]json.RawMessage
 	_ = json.Unmarshal(obj["messages"], &messages)
 
+	// Every user message should have the reminder; assistant messages should not.
+	for _, msg := range messages {
+		var role, content string
+		_ = json.Unmarshal(msg["role"], &role)
+		_ = json.Unmarshal(msg["content"], &content)
+		if role == "user" {
+			if !bytes.HasPrefix([]byte(content), []byte("<system-reminder>")) {
+				t.Errorf("user message should have reminder, got: %q", content)
+			}
+		} else {
+			if bytes.Contains([]byte(content), []byte("<system-reminder>")) {
+				t.Errorf("non-user message should not have reminder, got: %q", content)
+			}
+		}
+	}
+}
+
+func TestInjectUserReminder_Anthropic_SkipsToolResult(t *testing.T) {
+	// tool_result user messages must not get the reminder injected.
+	body := `{"model":"claude","messages":[` +
+		`{"role":"user","content":"do X"},` +
+		`{"role":"assistant","content":[{"type":"tool_use","id":"1","name":"bash","input":{}}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":"1","content":"ok"}]}` +
+		`]}`
+	out := injectAnthropicUserReminder([]byte(body))
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	var messages []map[string]json.RawMessage
+	_ = json.Unmarshal(obj["messages"], &messages)
+
+	// First user message (text) should have the reminder.
 	var firstContent string
 	_ = json.Unmarshal(messages[0]["content"], &firstContent)
-	if bytes.Contains([]byte(firstContent), []byte("<system-reminder>")) {
-		t.Errorf("first user message should not have reminder, got: %q", firstContent)
+	if !bytes.HasPrefix([]byte(firstContent), []byte("<system-reminder>")) {
+		t.Errorf("text user message should have reminder, got: %q", firstContent)
 	}
-	var lastContent string
-	_ = json.Unmarshal(messages[len(messages)-1]["content"], &lastContent)
-	if !bytes.HasPrefix([]byte(lastContent), []byte("<system-reminder>")) {
-		t.Errorf("last user message should have reminder, got: %q", lastContent)
+
+	// Last user message (tool_result) should be untouched.
+	var lastBlocks []map[string]json.RawMessage
+	_ = json.Unmarshal(messages[len(messages)-1]["content"], &lastBlocks)
+	if len(lastBlocks) != 1 {
+		t.Fatalf("tool_result message should have exactly 1 block, got %d", len(lastBlocks))
+	}
+	var blockType string
+	_ = json.Unmarshal(lastBlocks[0]["type"], &blockType)
+	if blockType != "tool_result" {
+		t.Errorf("block type should be tool_result, got %q", blockType)
 	}
 }
 
