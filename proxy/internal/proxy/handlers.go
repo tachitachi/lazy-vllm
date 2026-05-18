@@ -101,6 +101,8 @@ func (s *Server) forwardWithLogging(
 	bodyToForward := body
 	if isFlash {
 		bodyToForward = injectDisableThinking(body)
+	} else if compactLogger != nil {
+		bodyToForward = injectMemoryInstruction(bodyToForward, format)
 	}
 
 	baseURL := resolveBackend(s.Backends, stripFlash(model))
@@ -137,7 +139,7 @@ func (s *Server) forwardWithLogging(
 	var sessionID string
 	var toolsHash string
 	if compactLogger != nil {
-		toolsBlob := logger.ExtractTools(body)
+		toolsBlob := logger.ExtractTools(bodyToForward)
 		if len(toolsBlob) > 0 && string(toolsBlob) != "null" {
 			toolsHash = compactLogger.StoreTools(toolsBlob)
 		}
@@ -148,7 +150,7 @@ func (s *Server) forwardWithLogging(
 		}
 
 		// Store each message individually (globally deduplicated).
-		msgs := msgParser(body)
+		msgs := msgParser(bodyToForward)
 		for _, msg := range msgs {
 			msgBody, _ := json.Marshal(msg)
 			if mh := compactLogger.StoreMessage(string(msgBody)); mh != "" {
@@ -157,10 +159,12 @@ func (s *Server) forwardWithLogging(
 		}
 	}
 
-	rc := &responseCapture{ResponseWriter: w}
+	mc := newMemoryCapture(w, req.Stream, format)
+	rc := &responseCapture{ResponseWriter: mc}
 	forwardStart := time.Now()
 	forwardRequest(r.Context(), rc, r, baseURL, bodyToForward)
 	durationMS := time.Since(forwardStart).Milliseconds()
+	memContent := mc.Finalize()
 
 	// Store the output message (globally deduplicated).
 	if sessionID != "" {
@@ -174,6 +178,10 @@ func (s *Server) forwardWithLogging(
 		if mh := compactLogger.StoreMessage(string(outputBody)); mh != "" {
 			_ = compactLogger.AddMessageToSession(sessionID, mh, durationMS)
 		}
+	}
+
+	if memContent != "" {
+		slog.Info("memory observation", "session_id", sessionID, "content", memContent)
 	}
 }
 

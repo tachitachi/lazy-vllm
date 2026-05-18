@@ -104,9 +104,9 @@ func TestUniqueURLs(t *testing.T) {
 
 func TestExtractModel(t *testing.T) {
 	tests := []struct {
-		name   string
-		body   []byte
-		want   string
+		name      string
+		body      []byte
+		want      string
 		wantModel string // expected model field in the cleaned body
 	}{
 		{
