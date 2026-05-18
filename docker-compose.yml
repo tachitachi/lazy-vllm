@@ -224,6 +224,7 @@ services:
     ports:
       - "8002:8002"
     environment:
+      ENABLE_SYSTEM_REMINDER: true
       BACKENDS_MAP: >-
         [
           {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},

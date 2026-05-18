@@ -350,3 +350,97 @@ func TestInject_InvalidJSON(t *testing.T) {
 		t.Error("invalid JSON should return body unchanged")
 	}
 }
+
+// ── user reminder injection tests ─────────────────────────────────────────────
+// These call the underlying functions directly to avoid a dependency on the
+// ENABLE_SYSTEM_REMINDER environment variable.
+
+func TestInjectUserReminder_Anthropic_StringContent(t *testing.T) {
+	body := `{"model":"claude","messages":[{"role":"user","content":"What is 2+2?"}]}`
+	out := injectAnthropicUserReminder([]byte(body))
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	var messages []map[string]json.RawMessage
+	_ = json.Unmarshal(obj["messages"], &messages)
+	var content string
+	_ = json.Unmarshal(messages[len(messages)-1]["content"], &content)
+	if !bytes.HasPrefix([]byte(content), []byte("<system-reminder>")) {
+		t.Errorf("user message should start with reminder, got: %q", content)
+	}
+	if !bytes.Contains([]byte(content), []byte("What is 2+2?")) {
+		t.Errorf("original content should be preserved, got: %q", content)
+	}
+}
+
+func TestInjectUserReminder_Anthropic_ArrayContent(t *testing.T) {
+	body := `{"model":"claude","messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}`
+	out := injectAnthropicUserReminder([]byte(body))
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	var messages []map[string]json.RawMessage
+	_ = json.Unmarshal(obj["messages"], &messages)
+	var blocks []map[string]json.RawMessage
+	_ = json.Unmarshal(messages[len(messages)-1]["content"], &blocks)
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks (reminder + original), got %d", len(blocks))
+	}
+	var firstText string
+	_ = json.Unmarshal(blocks[0]["text"], &firstText)
+	if !bytes.HasPrefix([]byte(firstText), []byte("<system-reminder>")) {
+		t.Errorf("first block should be the reminder, got: %q", firstText)
+	}
+	var secondText string
+	_ = json.Unmarshal(blocks[1]["text"], &secondText)
+	if secondText != "Hello" {
+		t.Errorf("second block should preserve original text, got: %q", secondText)
+	}
+}
+
+func TestInjectUserReminder_Anthropic_LastUserMessage(t *testing.T) {
+	body := `{"model":"claude","messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}]}`
+	out := injectAnthropicUserReminder([]byte(body))
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	var messages []map[string]json.RawMessage
+	_ = json.Unmarshal(obj["messages"], &messages)
+
+	var firstContent string
+	_ = json.Unmarshal(messages[0]["content"], &firstContent)
+	if bytes.Contains([]byte(firstContent), []byte("<system-reminder>")) {
+		t.Errorf("first user message should not have reminder, got: %q", firstContent)
+	}
+	var lastContent string
+	_ = json.Unmarshal(messages[len(messages)-1]["content"], &lastContent)
+	if !bytes.HasPrefix([]byte(lastContent), []byte("<system-reminder>")) {
+		t.Errorf("last user message should have reminder, got: %q", lastContent)
+	}
+}
+
+func TestInjectUserReminder_OpenAI(t *testing.T) {
+	body := `{"model":"gpt","messages":[{"role":"system","content":"You help."},{"role":"user","content":"hi"}]}`
+	out := injectOpenAIUserReminder([]byte(body))
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(out, &obj); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	var messages []map[string]json.RawMessage
+	_ = json.Unmarshal(obj["messages"], &messages)
+	var content string
+	_ = json.Unmarshal(messages[len(messages)-1]["content"], &content)
+	if !bytes.HasPrefix([]byte(content), []byte("<system-reminder>")) {
+		t.Errorf("user message should start with reminder, got: %q", content)
+	}
+	if !bytes.Contains([]byte(content), []byte("hi")) {
+		t.Errorf("original content should be preserved, got: %q", content)
+	}
+}

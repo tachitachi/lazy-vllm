@@ -3,19 +3,27 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
-	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 )
 
 // memoryInstruction is appended to every qualifying system prompt.
 // The <memory> block Claude writes will be stripped before the client sees it.
-const memoryInstruction = "\n\nAfter your response, output exactly one <memory> block (it will be stripped before the user sees it):\n<memory>1–3 sentences: what was asked, what you did, any key files changed or decisions made.</memory>"
+const memoryInstruction = "\n\n<required_output_format>\nYour final text response MUST end with exactly one <memory> block. This applies on every response — including after long tool call sequences or implementation sessions. The block is stripped before the user sees it and stored for long-term memory.\n\n<memory>1–3 sentences: what was asked, what you did, any key files changed or decisions made.</memory>\n\nOmitting the <memory> block is an error.\n</required_output_format>"
+
+// memoryUserReminder is prepended to the last user message each turn.
+// Only injected when ENABLE_SYSTEM_REMINDER is set — useful for local LLMs
+// where prompt caching costs are negligible.
+const memoryUserReminder = "<system-reminder>End your response with a <memory>...</memory> block summarizing what was asked and what you did.</system-reminder>\n\n"
 
 const (
 	memOpenTag  = "<memory>"
 	memCloseTag = "</memory>"
 )
+
+// systemReminderEnabled is read once at startup from the environment.
+var systemReminderEnabled = os.Getenv("ENABLE_SYSTEM_REMINDER") != ""
 
 type captureState int
 
@@ -455,16 +463,96 @@ func (mc *memoryCapture) Finalize() string {
 
 // ── Injection ─────────────────────────────────────────────────────────────────
 
-// injectMemoryInstruction appends the memory annotation instruction to the
-// system prompt in the request body. Supports "anthropic" and "openai" formats.
+// injectMemoryInstruction injects the memory annotation into the request body:
+// always appends the instruction to the system prompt; optionally also prepends
+// a per-turn reminder to the last user message when ENABLE_SYSTEM_REMINDER is set.
 func injectMemoryInstruction(body []byte, format string) []byte {
 	switch format {
 	case "anthropic":
-		return injectAnthropicSystem(body, memoryInstruction)
+		body = injectAnthropicSystem(body, memoryInstruction)
+		if systemReminderEnabled {
+			body = injectAnthropicUserReminder(body)
+		}
+		return body
 	case "openai":
-		return injectOpenAISystem(body, memoryInstruction)
+		body = injectOpenAISystem(body, memoryInstruction)
+		if systemReminderEnabled {
+			body = injectOpenAIUserReminder(body)
+		}
+		return body
 	}
 	return body
+}
+
+func injectAnthropicUserReminder(body []byte) []byte {
+	reminder := memoryUserReminder
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return body
+	}
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(obj["messages"], &messages); err != nil {
+		return body
+	}
+	lastUser := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		var role string
+		json.Unmarshal(messages[i]["role"], &role) //nolint:errcheck
+		if role == "user" {
+			lastUser = i
+			break
+		}
+	}
+	if lastUser == -1 {
+		return body
+	}
+	var contentStr string
+	if err := json.Unmarshal(messages[lastUser]["content"], &contentStr); err == nil {
+		messages[lastUser]["content"] = rawJSON(reminder + contentStr)
+		obj["messages"] = rawJSON(messages)
+		return repack(obj, body)
+	}
+	var blocks []map[string]json.RawMessage
+	if err := json.Unmarshal(messages[lastUser]["content"], &blocks); err != nil {
+		return body
+	}
+	reminderBlock := map[string]json.RawMessage{
+		"type": rawJSON("text"),
+		"text": rawJSON(reminder),
+	}
+	blocks = append([]map[string]json.RawMessage{reminderBlock}, blocks...)
+	messages[lastUser]["content"] = rawJSON(blocks)
+	obj["messages"] = rawJSON(messages)
+	return repack(obj, body)
+}
+
+func injectOpenAIUserReminder(body []byte) []byte {
+	reminder := memoryUserReminder
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return body
+	}
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(obj["messages"], &messages); err != nil {
+		return body
+	}
+	lastUser := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		var role string
+		json.Unmarshal(messages[i]["role"], &role) //nolint:errcheck
+		if role == "user" {
+			lastUser = i
+			break
+		}
+	}
+	if lastUser == -1 {
+		return body
+	}
+	var content string
+	json.Unmarshal(messages[lastUser]["content"], &content) //nolint:errcheck
+	messages[lastUser]["content"] = rawJSON(reminder + content)
+	obj["messages"] = rawJSON(messages)
+	return repack(obj, body)
 }
 
 func injectAnthropicSystem(body []byte, addition string) []byte {
