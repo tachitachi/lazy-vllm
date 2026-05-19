@@ -12,12 +12,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite"
 )
 
 // CompactLogger stores conversation data in SQLite with O(n) storage.
 // Messages are globally deduplicated by SHA256(body).
 // Sessions reference messages via a join table and own a tools_hash.
+
+const schemaVersion = 3
 
 // CompactSession summarizes a stored conversation session.
 type CompactSession struct {
@@ -46,15 +49,48 @@ type CompactLogger struct {
 }
 
 // toolsHash computes a deterministic SHA256 hash of a canonical tools JSON string.
-func toolsHash(body []byte) string {
+func toolsHash(body []byte) []byte {
 	h := sha256.Sum256(body)
-	return hex.EncodeToString(h[:])
+	return h[:]
 }
 
 // bodyHash computes a deterministic SHA256 hash of a message body.
-func bodyHash(body string) string {
+func bodyHash(body string) []byte {
 	h := sha256.Sum256([]byte(body))
-	return hex.EncodeToString(h[:])
+	return h[:]
+}
+
+// hashHex converts a raw SHA256 hash to a hex string for API/JSON use.
+func hashHex(hash []byte) string {
+	return hex.EncodeToString(hash)
+}
+
+// hexHash converts a hex string back to a raw hash for DB queries.
+func hexHash(hexStr string) []byte {
+	b, _ := hex.DecodeString(hexStr)
+	return b
+}
+
+// compressData compresses data using zstd. Returns the original data if
+// compression doesn't help (very small payloads).
+// compressData compresses data using zstd. Returns the original data if
+// compression doesn't help (very small payloads).
+func compressData(data []byte) []byte {
+	out := zstd.EncodeTo(nil, data)
+	if len(out) >= len(data) {
+		return data
+	}
+	return out
+}
+
+// decompressData decompresses zstd-compressed data. Falls back to the
+// raw bytes if decompression fails (e.g., uncompressed legacy data).
+func decompressData(data []byte) []byte {
+	out, err := zstd.DecodeTo(nil, data)
+	if err != nil {
+		return data
+	}
+	return out
 }
 
 // NewCompact creates (or opens) the compact logger database.
@@ -77,30 +113,46 @@ func NewCompact(logDir string) (*CompactLogger, error) {
 		return nil, fmt.Errorf("compact logger: enable foreign keys: %w", err)
 	}
 
+	// Check schema version and migrate if needed.
+	var version int
+	err = db.QueryRowContext(ctx, "SELECT version FROM schema_version").Scan(&version)
+	if err == nil && version >= schemaVersion {
+		// Schema is up to date.
+		return &CompactLogger{db: db}, nil
+	}
+
+	// Drop old tables and recreate with optimized schema.
+	for _, tbl := range []string{"session_messages", "sessions", "messages", "tools", "schema_version"} {
+		db.ExecContext(ctx, "DROP TABLE IF EXISTS "+tbl) //nolint:errcheck
+	}
+
 	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS schema_version (
+			version INTEGER PRIMARY KEY
+		)`,
 		`CREATE TABLE IF NOT EXISTS tools (
-			hash    TEXT    PRIMARY KEY,
-			body   TEXT    NOT NULL,
-			created_at REAL NOT NULL
+			hash       BLOB    PRIMARY KEY,
+			body       BLOB    NOT NULL,
+			created_at INTEGER NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS messages (
-			hash       TEXT    PRIMARY KEY,
-			body       TEXT    NOT NULL,
-			created_at REAL    NOT NULL
+			hash       BLOB    PRIMARY KEY,
+			body       BLOB    NOT NULL,
+			created_at INTEGER NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS sessions (
 			id          TEXT    PRIMARY KEY,
 			format      TEXT    NOT NULL,
 			model       TEXT    NOT NULL DEFAULT '',
 			token_count INTEGER NOT NULL DEFAULT 0,
-			tools_hash  TEXT,
+			tools_hash  BLOB,
 			summary     TEXT,
-			created_at  REAL    NOT NULL,
+			created_at  INTEGER NOT NULL,
 			FOREIGN KEY(tools_hash) REFERENCES tools(hash)
 		)`,
 		`CREATE TABLE IF NOT EXISTS session_messages (
 			session_id   TEXT    NOT NULL,
-			message_hash TEXT    NOT NULL,
+			message_hash BLOB    NOT NULL,
 			sequence     INTEGER NOT NULL,
 			duration_ms  INTEGER NOT NULL DEFAULT 0,
 			UNIQUE(session_id, sequence),
@@ -115,9 +167,10 @@ func NewCompact(logDir string) (*CompactLogger, error) {
 			return nil, fmt.Errorf("compact logger: create schema: %w", err)
 		}
 	}
-
-	// Migrate existing DBs: add summary column if missing (ignore error on duplicate).
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN summary TEXT`)
+	if _, err := db.ExecContext(ctx, `INSERT INTO schema_version (version) VALUES (?)`, schemaVersion); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("compact logger: insert schema version: %w", err)
+	}
 
 	return &CompactLogger{db: db}, nil
 }
@@ -143,74 +196,60 @@ func (c *CompactLogger) StartSession(toolsHash, format, model string, tokenCount
 		hex.EncodeToString(b[10:16]),
 	)
 
-	var toolsPtr *string
+	var toolsBlob *[]byte
 	if toolsHash != "" {
-		toolsPtr = &toolsHash
+		b := hexHash(toolsHash)
+		toolsBlob = &b
 	}
 	if _, err := c.db.ExecContext(context.Background(),
 		`INSERT INTO sessions (id, format, model, token_count, tools_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		id, format, model, tokenCount, toolsPtr, time.Now().UnixMilli(),
+		id, format, model, tokenCount, toolsBlob, time.Now().UnixMilli(),
 	); err != nil {
 		return "", fmt.Errorf("compact logger: insert session: %w", err)
 	}
 	return id, nil
 }
 
-// StoreTools deduplicates a tools JSON blob, returning its hash.
+// StoreTools deduplicates a tools JSON blob, returning its hex-encoded hash.
 func (c *CompactLogger) StoreTools(body []byte) string {
 	th := toolsHash(body)
-
-	var existing string
-	err := c.db.QueryRowContext(context.Background(), "SELECT hash FROM tools WHERE hash = ?", th).Scan(&existing)
-	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := c.db.ExecContext(context.Background(),
-			`INSERT INTO tools (hash, body, created_at) VALUES (?, ?, ?)`,
-			th, string(body), time.Now().UnixMilli(),
-		); err != nil {
-			return ""
-		}
-		return th
-	}
-	if err != nil {
+	compressed := compressData(body)
+	if _, err := c.db.ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO tools (hash, body, created_at) VALUES (?, ?, ?)`,
+		th, compressed, time.Now().UnixMilli(),
+	); err != nil {
 		return ""
 	}
-	return existing
+	return hashHex(th)
 }
 
-// StoreMessage deduplicates a message by body content, returning its hash.
+// StoreMessage deduplicates a message by body content, returning its hex-encoded hash.
 func (c *CompactLogger) StoreMessage(body string) string {
 	bh := bodyHash(body)
-
-	var existing string
-	err := c.db.QueryRowContext(context.Background(), "SELECT hash FROM messages WHERE hash = ?", bh).Scan(&existing)
-	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := c.db.ExecContext(context.Background(),
-			`INSERT INTO messages (hash, body, created_at) VALUES (?, ?, ?)`,
-			bh, body, time.Now().UnixMilli(),
-		); err != nil {
-			return ""
-		}
-		return bh
-	}
-	if err != nil {
+	compressed := compressData([]byte(body))
+	if _, err := c.db.ExecContext(context.Background(),
+		`INSERT OR IGNORE INTO messages (hash, body, created_at) VALUES (?, ?, ?)`,
+		bh, compressed, time.Now().UnixMilli(),
+	); err != nil {
 		return ""
 	}
-	return existing
+	return hashHex(bh)
 }
 
 // AddMessageToSession adds a message hash to a session's message chain.
 func (c *CompactLogger) AddMessageToSession(sessionID, messageHash string, durationMS int64) error {
+	bh := hexHash(messageHash)
 	var seq int
 	err := c.db.QueryRowContext(context.Background(),
 		"SELECT COALESCE(MAX(sequence), 0) FROM session_messages WHERE session_id = ?",
 		sessionID,
 	).Scan(&seq)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err != nil && errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	_, err = c.db.ExecContext(context.Background(),
 		`INSERT INTO session_messages (session_id, message_hash, sequence, duration_ms) VALUES (?, ?, ?, ?)`,
-		sessionID, messageHash, seq+1, durationMS,
+		sessionID, bh, seq+1, durationMS,
 	)
 	return err
 }
@@ -228,17 +267,20 @@ func (c *CompactLogger) SetSessionSummary(sessionID, summary string) error {
 func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSessionMessage, error) {
 	// Get session metadata
 	var session CompactSession
-	var toolsHashPtr *string
-	var created float64
+	var toolsHashBlob *[]byte
+	var created int64
 	err := c.db.QueryRowContext(context.Background(),
 		`SELECT id, format, model, token_count, tools_hash, summary, created_at FROM sessions WHERE id = ?`,
 		id,
-	).Scan(&session.ID, &session.Format, &session.Model, &session.TokenCount, &toolsHashPtr, &session.Summary, &created)
+	).Scan(&session.ID, &session.Format, &session.Model, &session.TokenCount, &toolsHashBlob, &session.Summary, &created)
 	if err != nil {
 		return nil, nil, err
 	}
-	session.CreatedAt = time.UnixMilli(int64(created))
-	session.ToolsHash = toolsHashPtr
+	session.CreatedAt = time.UnixMilli(created)
+	if toolsHashBlob != nil {
+		h := hashHex(*toolsHashBlob)
+		session.ToolsHash = &h
+	}
 
 	// Get messages in sequence order
 	rows, err := c.db.QueryContext(context.Background(),
@@ -257,11 +299,15 @@ func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSession
 	var msgs []CompactSessionMessage
 	for rows.Next() {
 		var msg CompactSessionMessage
-		var created float64
-		if err := rows.Scan(&msg.Sequence, &msg.MessageHash, &msg.Body, &created, &msg.DurationMS); err != nil {
+		var hash []byte
+		var body []byte
+		var created int64
+		if err := rows.Scan(&msg.Sequence, &hash, &body, &created, &msg.DurationMS); err != nil {
 			continue
 		}
-		msg.CreatedAt = time.UnixMilli(int64(created))
+		msg.Body = string(decompressData(body))
+		msg.MessageHash = hashHex(hash)
+		msg.CreatedAt = time.UnixMilli(created)
 		msgs = append(msgs, msg)
 	}
 	return &session, msgs, nil
@@ -287,24 +333,30 @@ func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 	var sessions []CompactSession
 	for rows.Next() {
 		var s CompactSession
-		var created float64
+		var created int64
+		var toolsHashBlob *[]byte
 		var lastDuration *int64
-		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &s.ToolsHash, &s.Summary, &created, &s.MessageCt, &lastDuration); err != nil {
+		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &toolsHashBlob, &s.Summary, &created, &s.MessageCt, &lastDuration); err != nil {
 			continue
 		}
-		s.CreatedAt = time.UnixMilli(int64(created))
+		s.CreatedAt = time.UnixMilli(created)
 		s.LastDurationMS = lastDuration
+		if toolsHashBlob != nil {
+			h := hashHex(*toolsHashBlob)
+			s.ToolsHash = &h
+		}
 		sessions = append(sessions, s)
 	}
 	return sessions, nil
 }
 
-// GetTools retrieves a tools JSON blob by its hash.
+// GetTools retrieves a tools JSON blob by its hex-encoded hash.
 func (c *CompactLogger) GetTools(hash string) (string, error) {
-	var body string
-	err := c.db.QueryRowContext(context.Background(), "SELECT body FROM tools WHERE hash = ?", hash).Scan(&body)
+	bh := hexHash(hash)
+	var body []byte
+	err := c.db.QueryRowContext(context.Background(), "SELECT body FROM tools WHERE hash = ?", bh).Scan(&body)
 	if err != nil {
 		return "", err
 	}
-	return body, nil
+	return string(decompressData(body)), nil
 }

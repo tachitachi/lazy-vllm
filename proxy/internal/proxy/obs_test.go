@@ -21,10 +21,10 @@ func sseEvent(deltaType, text string) []byte {
 }
 
 func sseBlockStart(blockType string) []byte {
-	return []byte(fmt.Sprintf(
+	return fmt.Appendf(nil,
 		"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"%s\"}}\n\n",
 		blockType,
-	))
+	)
 }
 
 func sseBlockStop() []byte {

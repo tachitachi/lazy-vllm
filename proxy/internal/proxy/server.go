@@ -59,8 +59,8 @@ func extractModel(body []byte) (string, []byte) {
 	if !ok || model == "" {
 		return "", body
 	}
-	if strings.HasSuffix(model, flashSuffix) {
-		obj["model"] = strings.TrimSuffix(model, flashSuffix)
+	if before, ok0 := strings.CutSuffix(model, flashSuffix); ok0 {
+		obj["model"] = before
 		cleaned, _ := json.Marshal(obj)
 		if len(cleaned) == 0 {
 			cleaned = body
@@ -74,8 +74,8 @@ const flashSuffix = "-FLASH"
 
 // stripFlash removes the -FLASH suffix from a model name if present.
 func stripFlash(name string) string {
-	if strings.HasSuffix(name, flashSuffix) {
-		return strings.TrimSuffix(name, flashSuffix)
+	if before, ok := strings.CutSuffix(name, flashSuffix); ok {
+		return before
 	}
 	return name
 }

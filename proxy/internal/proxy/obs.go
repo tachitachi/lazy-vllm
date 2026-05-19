@@ -113,7 +113,7 @@ func (mc *obsCapture) drainSSE() {
 func (mc *obsCapture) handleSSEEvent(event []byte) {
 	// Locate the data: line.
 	var payload []byte
-	for _, line := range bytes.Split(event, []byte("\n")) {
+	for line := range bytes.SplitSeq(event, []byte("\n")) {
 		if bytes.HasPrefix(line, []byte("data: ")) {
 			payload = line[6:]
 			break
@@ -211,9 +211,9 @@ func (mc *obsCapture) handleTextDelta(
 	case stateSuppressing:
 		mc.obsBuf.WriteString(text)
 		all := mc.obsBuf.String()
-		if idx := strings.Index(all, obsCloseTag); idx >= 0 {
+		if before, _, ok := strings.Cut(all, obsCloseTag); ok {
 			mc.obsBuf.Reset()
-			mc.obsBuf.WriteString(all[:idx])
+			mc.obsBuf.WriteString(before)
 			mc.obsState = stateDone
 		}
 		return
@@ -269,9 +269,9 @@ func (mc *obsCapture) handleTextDelta(
 		mc.obsState = stateSuppressing
 		after := combined[idx+len(obsOpenTag):]
 		mc.obsBuf.WriteString(after)
-		if closeIdx := strings.Index(after, obsCloseTag); closeIdx >= 0 {
+		if before0, _, ok := strings.Cut(after, obsCloseTag); ok {
 			mc.obsBuf.Reset()
-			mc.obsBuf.WriteString(after[:closeIdx])
+			mc.obsBuf.WriteString(before0)
 			mc.obsState = stateDone
 		}
 	}
@@ -314,7 +314,7 @@ func rebuildOpenAIDelta(rawEvent []byte, newContent string) []byte {
 // mutator function, preserving any event:/id: prefix lines.
 func rebuildSSEDataField(rawEvent []byte, mutate func(map[string]json.RawMessage) bool) []byte {
 	var result bytes.Buffer
-	for _, line := range bytes.Split(rawEvent, []byte("\n")) {
+	for line := range bytes.SplitSeq(rawEvent, []byte("\n")) {
 		if bytes.HasPrefix(line, []byte("data: ")) {
 			var obj map[string]json.RawMessage
 			if err := json.Unmarshal(line[6:], &obj); err == nil && mutate(obj) {
@@ -377,8 +377,8 @@ func stripObsAnthropicJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 			continue
 		}
 		after := block.Text[idx+len(obsOpenTag):]
-		if closeIdx := strings.Index(after, obsCloseTag); closeIdx >= 0 {
-			mem = after[:closeIdx]
+		if before, _, ok0 := strings.Cut(after, obsCloseTag); ok0 {
+			mem = before
 		} else {
 			mem = after
 		}
@@ -414,13 +414,12 @@ func stripObsOpenAIJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 		return "", nil, false
 	}
 	content := resp.Choices[0].Message.Content
-	idx := strings.Index(content, obsOpenTag)
-	if idx == -1 {
+	before, after, ok0 := strings.Cut(content, obsOpenTag)
+	if !ok0 {
 		return "", nil, false
 	}
-	after := content[idx+len(obsOpenTag):]
-	if closeIdx := strings.Index(after, obsCloseTag); closeIdx >= 0 {
-		mem = after[:closeIdx]
+	if before, _, ok0 := strings.Cut(after, obsCloseTag); ok0 {
+		mem = before
 	} else {
 		mem = after
 	}
@@ -430,7 +429,7 @@ func stripObsOpenAIJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 	json.Unmarshal(respObj["choices"], &choices) //nolint:errcheck
 	var message map[string]json.RawMessage
 	json.Unmarshal(choices[0]["message"], &message) //nolint:errcheck
-	message["content"] = rawJSON(strings.TrimRight(content[:idx], "\n "))
+	message["content"] = rawJSON(strings.TrimRight(before, "\n "))
 	choices[0]["message"] = rawJSON(message)
 	respObj["choices"] = rawJSON(choices)
 	out, err := json.Marshal(respObj)

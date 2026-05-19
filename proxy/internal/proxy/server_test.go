@@ -354,8 +354,8 @@ func TestInjectFlashModels(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, _ := obj["id"].(string)
-		if strings.HasSuffix(id, "-FLASH") {
-			expectedPrefix := strings.TrimSuffix(id, "-FLASH")
+		if before, ok := strings.CutSuffix(id, "-FLASH"); ok {
+			expectedPrefix := before
 			if expectedPrefix != "model-a" && expectedPrefix != "model-b" {
 				t.Errorf("unexpected flash model id: %q", id)
 			}

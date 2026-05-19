@@ -1,9 +1,11 @@
 package logger
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -22,15 +24,15 @@ func TestToolsHash_Deterministic(t *testing.T) {
 	tools := []byte(`[{"type":"function","function":{"name":"weather"}}]`)
 	h1 := toolsHash(tools)
 	h2 := toolsHash(tools)
-	if h1 != h2 {
-		t.Errorf("same input produced different hashes: %q vs %q", h1, h2)
+	if !bytes.Equal(h1, h2) {
+		t.Errorf("same input produced different hashes: %q vs %q", hashHex(h1), hashHex(h2))
 	}
 }
 
 func TestToolsHash_DifferentContent(t *testing.T) {
 	toolsA := []byte(`[{"type":"function","function":{"name":"weather"}}]`)
 	toolsB := []byte(`[{"type":"function","function":{"name":"search"}}]`)
-	if toolsHash(toolsA) == toolsHash(toolsB) {
+	if bytes.Equal(toolsHash(toolsA), toolsHash(toolsB)) {
 		t.Error("different tools should produce different hashes")
 	}
 }
@@ -58,8 +60,8 @@ func TestBodyHash_Deterministic(t *testing.T) {
 	body := `{"role":"user","content":"hello"}`
 	h1 := bodyHash(body)
 	h2 := bodyHash(body)
-	if h1 != h2 {
-		t.Errorf("same input produced different hashes: %q vs %q", h1, h2)
+	if !bytes.Equal(h1, h2) {
+		t.Errorf("same input produced different hashes: %q vs %q", hashHex(h1), hashHex(h2))
 	}
 	if len(h1) == 0 {
 		t.Error("hash should not be empty")
@@ -69,7 +71,7 @@ func TestBodyHash_Deterministic(t *testing.T) {
 func TestBodyHash_DifferentBody(t *testing.T) {
 	a := `{"role":"user","content":"hello"}`
 	b := `{"role":"user","content":"world"}`
-	if bodyHash(a) == bodyHash(b) {
+	if bytes.Equal(bodyHash(a), bodyHash(b)) {
 		t.Error("different bodies should produce different hashes")
 	}
 }
@@ -325,5 +327,61 @@ func TestNewCompact_TempDir(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(dir, "compact_logs.db")); os.IsNotExist(err) {
 		t.Error("compact_logs.db should exist")
+	}
+}
+
+func TestSchemaVersion(t *testing.T) {
+	l := newTestLogger(t)
+
+	var version int
+	err := l.db.QueryRowContext(context.Background(), "SELECT version FROM schema_version").Scan(&version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version != schemaVersion {
+		t.Errorf("expected schema version %d, got %d", schemaVersion, version)
+	}
+}
+
+func TestCompression_RoundTrip(t *testing.T) {
+	// Test small payload (stored uncompressed)
+	small := `{"role":"user","content":"hi"}`
+	compressedSmall := compressData([]byte(small))
+	decompressedSmall := decompressData(compressedSmall)
+	if string(decompressedSmall) != small {
+		t.Errorf("small roundtrip failed: got %q", string(decompressedSmall))
+	}
+
+	// Test large payload (stored compressed)
+	large := strings.Repeat("x", 10_000)
+	compressedLarge := compressData([]byte(large))
+	if len(compressedLarge) >= len(large) {
+		t.Error("large payload should be compressed")
+	}
+	decompressedLarge := decompressData(compressedLarge)
+	if string(decompressedLarge) != large {
+		t.Errorf("large roundtrip failed")
+	}
+}
+
+func TestStoreMessage_Compression(t *testing.T) {
+	l := newTestLogger(t)
+
+	// Store a large message body
+	body := strings.Repeat("hello world ", 1000)
+	hash := l.StoreMessage(body)
+	if hash == "" {
+		t.Fatal("StoreMessage returned empty hash")
+	}
+
+	// Directly verify DB stores compressed data
+	var storedBody []byte
+	err := l.db.QueryRowContext(context.Background(), "SELECT body FROM messages WHERE hash = ?", hexHash(hash)).Scan(&storedBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decompressed := decompressData(storedBody)
+	if string(decompressed) != body {
+		t.Errorf("roundtrip failed: got %d bytes, want %d", len(decompressed), len(body))
 	}
 }

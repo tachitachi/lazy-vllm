@@ -319,6 +319,14 @@ function renderSessionDetail(session, msgs) {
       <span class="text-xs text-gray-500">${msgs ? msgs.length : 0} message(s)</span>
     </div>`;
 
+  // Observation summary
+  if (session.summary) {
+    html += `<div class="mt-2 bg-gray-900 rounded p-3 border border-indigo-900/60">
+      <div class="text-xs text-indigo-400 font-semibold mb-1">Observation</div>
+      <div class="text-sm text-gray-300 whitespace-pre-wrap break-words">${escHtml(session.summary)}</div>
+    </div>`;
+  }
+
   // Tools section (expandable gear icon)
   if (toolsHash) {
     html += `
@@ -423,6 +431,9 @@ function renderSessionsList(sessions) {
     const modelLine = s.model
       ? `<div class="text-xs text-indigo-300 font-mono truncate">${escHtml(s.model)}</div>`
       : '';
+    const summary = s.summary
+      ? `<div class="text-xs text-gray-400 truncate mt-0.5" title="${escAttr(s.summary)}">${escHtml(s.summary.slice(0, 120))}</div>`
+      : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
            onclick="selectSession('${escHtml(s.id)}')">
@@ -442,6 +453,7 @@ function renderSessionsList(sessions) {
             ${s.last_duration_ms ? `<span class="text-xs text-green-400">${fmtDuration(s.last_duration_ms)}</span>` : ''}
           </span>
         </div>
+        ${summary}
       </div>`;
   }).join('');
 }
