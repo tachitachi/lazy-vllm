@@ -102,7 +102,7 @@ func (s *Server) forwardWithLogging(
 	if isFlash {
 		bodyToForward = injectDisableThinking(body)
 	} else if compactLogger != nil {
-		bodyToForward = injectMemoryInstruction(bodyToForward, format)
+		bodyToForward = injectObsInstruction(bodyToForward, format)
 	}
 
 	baseURL := resolveBackend(s.Backends, stripFlash(model))
@@ -159,12 +159,12 @@ func (s *Server) forwardWithLogging(
 		}
 	}
 
-	mc := newMemoryCapture(w, req.Stream, format)
+	mc := newObsCapture(w, req.Stream, format)
 	rc := &responseCapture{ResponseWriter: mc}
 	forwardStart := time.Now()
 	forwardRequest(r.Context(), rc, r, baseURL, bodyToForward)
 	durationMS := time.Since(forwardStart).Milliseconds()
-	memContent := mc.Finalize()
+	obsContent := mc.Finalize()
 
 	// Store the output message (globally deduplicated).
 	if sessionID != "" {
@@ -180,8 +180,8 @@ func (s *Server) forwardWithLogging(
 		}
 	}
 
-	if memContent != "" && sessionID != "" {
-		if err := compactLogger.SetSessionSummary(sessionID, memContent); err != nil {
+	if obsContent != "" && sessionID != "" {
+		if err := compactLogger.SetSessionSummary(sessionID, obsContent); err != nil {
 			slog.Warn("compact logger: set session summary failed", "err", err)
 		}
 	}

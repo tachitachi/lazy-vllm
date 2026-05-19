@@ -8,18 +8,18 @@ import (
 	"strings"
 )
 
-// memoryInstruction is appended to every qualifying system prompt.
-// The <memory> block Claude writes will be stripped before the client sees it.
-const memoryInstruction = "\n\n<required_output_format>\nYour final text response MUST end with exactly one <memory> block. This applies on every response — including after long tool call sequences or implementation sessions. The block is stripped before the user sees it and stored for long-term memory.\n\n<memory>1–3 sentences: what was asked, what you did, any key files changed or decisions made.</memory>\n\nOmitting the <memory> block is an error.\n</required_output_format>"
+// obsInstruction is appended to every qualifying system prompt.
+// The <obs> block Claude writes will be stripped before the client sees it.
+const obsInstruction = "\n\n<system_obs_directive>\nCRITICAL OVERRIDE: This session operates with an external observation logger. Regardless of the current task, tool call sequence, or formatting constraints requested by the user, your final text payload must ALWAYS conclude with a session observation block.\n\n<execution_order>\n1. **Primary Task**: Execute the user's request (including raw JSON outputs, code blocks, or Anthropic tool calls). Adhere strictly to any formatting rules required for this step.\n2. **Session Observation**: ONLY AFTER the primary task is completely finished, append the mandatory observation block as raw text at the absolute end of your response. Do not place the observation block inside JSON objects, code blocks, or tool schemas.\n</execution_order>\n\n<observation_format_requirement>\nYour response MUST terminate with exactly this tag structure:\n<obs>1–3 sentences: what was asked, what you did, any key files changed or decisions made.</obs>\n</observation_format_requirement>\n</system_obs_directive>"
 
-// memoryUserReminder is prepended to the last user message each turn.
+// obsReminder is appended to every user message each turn.
 // Only injected when ENABLE_SYSTEM_REMINDER is set — useful for local LLMs
 // where prompt caching costs are negligible.
-const memoryUserReminder = "<system-reminder>End your response with a <memory>...</memory> block summarizing what was asked and what you did.</system-reminder>\n\n"
+const obsReminder = "\n\n<system_obs_directive>\nReminder: Follow the <execution_order>. Fulfill the task/JSON constraints first, then append the <obs>...</obs> observation block at the very end of your response text.\n</system_obs_directive>"
 
 const (
-	memOpenTag  = "<memory>"
-	memCloseTag = "</memory>"
+	obsOpenTag  = "<obs>"
+	obsCloseTag = "</obs>"
 )
 
 // systemReminderEnabled is read once at startup from the environment.
@@ -29,20 +29,20 @@ type captureState int
 
 const (
 	stateSearching   captureState = iota
-	stateSuppressing              // inside <memory>...</memory>
-	stateDone                     // </memory> seen; stop collecting
+	stateSuppressing              // inside <obs>...</obs>
+	stateDone                     // </obs> seen; stop collecting
 )
 
-// memoryCapture strips <memory>...</memory> blocks from the response forwarded
+// obsCapture strips <obs>...</obs> blocks from the response forwarded
 // to the client. It is content-block-aware:
 //
 //   - Streaming (SSE): only scans text_delta events; thinking_delta events are
 //     forwarded to the client unchanged and never scanned.
-//   - Non-streaming: buffers the full body and strips <memory> from text content
+//   - Non-streaming: buffers the full body and strips <obs> from text content
 //     blocks (not thinking blocks) in Finalize.
 //
 // The full unmodified response is always available in Full (for CompactLogger).
-type memoryCapture struct {
+type obsCapture struct {
 	w           http.ResponseWriter
 	isStreaming bool
 	format      string // "anthropic" or "openai"
@@ -50,10 +50,10 @@ type memoryCapture struct {
 	// ── streaming ────────────────────────────────────────────────────────────
 	sseBuf    bytes.Buffer // partial SSE events (drain on \n\n)
 	inThink   bool         // currently inside a thinking content block
-	memState  captureState
+	obsState  captureState
 	heldEvent []byte       // an SSE event held back because its text ended with a
-	heldText  string       // potential <memory> prefix; released on next text event
-	memBuf    bytes.Buffer // extracted memory text (no tags)
+	heldText  string       // potential <obs> prefix; released on next text event
+	obsBuf    bytes.Buffer // extracted obs text (no tags)
 
 	// ── non-streaming ────────────────────────────────────────────────────────
 	bodyBuf bytes.Buffer // buffered full response body
@@ -62,28 +62,28 @@ type memoryCapture struct {
 	Full bytes.Buffer // complete raw response bytes (for CompactLogger)
 }
 
-func newMemoryCapture(w http.ResponseWriter, isStreaming bool, format string) *memoryCapture {
-	return &memoryCapture{w: w, isStreaming: isStreaming, format: format}
+func newObsCapture(w http.ResponseWriter, isStreaming bool, format string) *obsCapture {
+	return &obsCapture{w: w, isStreaming: isStreaming, format: format}
 }
 
-func (mc *memoryCapture) Header() http.Header { return mc.w.Header() }
+func (mc *obsCapture) Header() http.Header { return mc.w.Header() }
 
-func (mc *memoryCapture) WriteHeader(code int) {
+func (mc *obsCapture) WriteHeader(code int) {
 	// For non-streaming we buffer the body and write it ourselves in Finalize,
-	// so the declared Content-Length would be wrong after <memory> is stripped.
+	// so the declared Content-Length would be wrong after <obs> is stripped.
 	if !mc.isStreaming {
 		mc.w.Header().Del("Content-Length")
 	}
 	mc.w.WriteHeader(code)
 }
 
-func (mc *memoryCapture) Flush() {
+func (mc *obsCapture) Flush() {
 	if f, ok := mc.w.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-func (mc *memoryCapture) Write(p []byte) (int, error) {
+func (mc *obsCapture) Write(p []byte) (int, error) {
 	mc.Full.Write(p)
 	if mc.isStreaming {
 		mc.sseBuf.Write(p)
@@ -96,7 +96,7 @@ func (mc *memoryCapture) Write(p []byte) (int, error) {
 
 // ── Streaming path ────────────────────────────────────────────────────────────
 
-func (mc *memoryCapture) drainSSE() {
+func (mc *obsCapture) drainSSE() {
 	for {
 		buf := mc.sseBuf.Bytes()
 		idx := bytes.Index(buf, []byte("\n\n"))
@@ -110,7 +110,7 @@ func (mc *memoryCapture) drainSSE() {
 	}
 }
 
-func (mc *memoryCapture) handleSSEEvent(event []byte) {
+func (mc *obsCapture) handleSSEEvent(event []byte) {
 	// Locate the data: line.
 	var payload []byte
 	for _, line := range bytes.Split(event, []byte("\n")) {
@@ -167,7 +167,7 @@ func (mc *memoryCapture) handleSSEEvent(event []byte) {
 	}
 }
 
-func (mc *memoryCapture) handleAnthropicEvent(
+func (mc *obsCapture) handleAnthropicEvent(
 	evtType, blockType, deltaType, deltaText string, rawEvent []byte,
 ) {
 	switch evtType {
@@ -189,10 +189,10 @@ func (mc *memoryCapture) handleAnthropicEvent(
 }
 
 // hasSuspiciousTail reports whether text ends with a non-empty prefix of
-// memOpenTag, meaning a <memory> tag might continue in the next SSE event.
+// obsOpenTag, meaning a <obs> tag might continue in the next SSE event.
 func hasSuspiciousTail(text string) bool {
-	for i := 1; i <= len(memOpenTag) && i <= len(text); i++ {
-		if strings.HasSuffix(text, memOpenTag[:i]) {
+	for i := 1; i <= len(obsOpenTag) && i <= len(text); i++ {
+		if strings.HasSuffix(text, obsOpenTag[:i]) {
 			return true
 		}
 	}
@@ -201,20 +201,20 @@ func hasSuspiciousTail(text string) bool {
 
 // handleTextDelta processes text content from a streaming event.
 // rebuild reconstructs the SSE event bytes with a modified text value.
-func (mc *memoryCapture) handleTextDelta(
+func (mc *obsCapture) handleTextDelta(
 	text string, rawEvent []byte, rebuild func([]byte, string) []byte,
 ) {
-	switch mc.memState {
+	switch mc.obsState {
 	case stateDone:
 		return // suppress
 
 	case stateSuppressing:
-		mc.memBuf.WriteString(text)
-		all := mc.memBuf.String()
-		if idx := strings.Index(all, memCloseTag); idx >= 0 {
-			mc.memBuf.Reset()
-			mc.memBuf.WriteString(all[:idx])
-			mc.memState = stateDone
+		mc.obsBuf.WriteString(text)
+		all := mc.obsBuf.String()
+		if idx := strings.Index(all, obsCloseTag); idx >= 0 {
+			mc.obsBuf.Reset()
+			mc.obsBuf.WriteString(all[:idx])
+			mc.obsState = stateDone
 		}
 		return
 
@@ -227,7 +227,7 @@ func (mc *memoryCapture) handleTextDelta(
 			combined = text
 		}
 
-		idx := strings.Index(combined, memOpenTag)
+		idx := strings.Index(combined, obsOpenTag)
 		if idx == -1 {
 			// No tag found: release held event, decide whether to hold current.
 			if mc.heldEvent != nil {
@@ -266,13 +266,13 @@ func (mc *memoryCapture) handleTextDelta(
 			_, _ = mc.w.Write(rebuild(rawEvent, before))
 		}
 
-		mc.memState = stateSuppressing
-		after := combined[idx+len(memOpenTag):]
-		mc.memBuf.WriteString(after)
-		if closeIdx := strings.Index(after, memCloseTag); closeIdx >= 0 {
-			mc.memBuf.Reset()
-			mc.memBuf.WriteString(after[:closeIdx])
-			mc.memState = stateDone
+		mc.obsState = stateSuppressing
+		after := combined[idx+len(obsOpenTag):]
+		mc.obsBuf.WriteString(after)
+		if closeIdx := strings.Index(after, obsCloseTag); closeIdx >= 0 {
+			mc.obsBuf.Reset()
+			mc.obsBuf.WriteString(after[:closeIdx])
+			mc.obsState = stateDone
 		}
 	}
 }
@@ -334,7 +334,7 @@ func rebuildSSEDataField(rawEvent []byte, mutate func(map[string]json.RawMessage
 
 // ── Non-streaming path ────────────────────────────────────────────────────────
 
-func (mc *memoryCapture) finalizeNonStreaming() string {
+func (mc *obsCapture) finalizeNonStreaming() string {
 	body := mc.bodyBuf.Bytes()
 	if len(body) == 0 {
 		return ""
@@ -344,9 +344,9 @@ func (mc *memoryCapture) finalizeNonStreaming() string {
 	var ok bool
 	switch mc.format {
 	case "anthropic":
-		mem, cleaned, ok = stripMemoryAnthropicJSON(body)
+		mem, cleaned, ok = stripObsAnthropicJSON(body)
 	case "openai":
-		mem, cleaned, ok = stripMemoryOpenAIJSON(body)
+		mem, cleaned, ok = stripObsOpenAIJSON(body)
 	}
 	if ok {
 		_, _ = mc.w.Write(cleaned)
@@ -356,7 +356,7 @@ func (mc *memoryCapture) finalizeNonStreaming() string {
 	return ""
 }
 
-func stripMemoryAnthropicJSON(body []byte) (mem string, cleaned []byte, ok bool) {
+func stripObsAnthropicJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 	var resp struct {
 		Content []json.RawMessage `json:"content"`
 	}
@@ -372,12 +372,12 @@ func stripMemoryAnthropicJSON(body []byte) (mem string, cleaned []byte, ok bool)
 		if err := json.Unmarshal(blockRaw, &block); err != nil || block.Type != "text" {
 			continue
 		}
-		idx := strings.Index(block.Text, memOpenTag)
+		idx := strings.Index(block.Text, obsOpenTag)
 		if idx == -1 {
 			continue
 		}
-		after := block.Text[idx+len(memOpenTag):]
-		if closeIdx := strings.Index(after, memCloseTag); closeIdx >= 0 {
+		after := block.Text[idx+len(obsOpenTag):]
+		if closeIdx := strings.Index(after, obsCloseTag); closeIdx >= 0 {
 			mem = after[:closeIdx]
 		} else {
 			mem = after
@@ -402,7 +402,7 @@ func stripMemoryAnthropicJSON(body []byte) (mem string, cleaned []byte, ok bool)
 	return mem, out, true
 }
 
-func stripMemoryOpenAIJSON(body []byte) (mem string, cleaned []byte, ok bool) {
+func stripObsOpenAIJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 	var resp struct {
 		Choices []struct {
 			Message struct {
@@ -414,12 +414,12 @@ func stripMemoryOpenAIJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 		return "", nil, false
 	}
 	content := resp.Choices[0].Message.Content
-	idx := strings.Index(content, memOpenTag)
+	idx := strings.Index(content, obsOpenTag)
 	if idx == -1 {
 		return "", nil, false
 	}
-	after := content[idx+len(memOpenTag):]
-	if closeIdx := strings.Index(after, memCloseTag); closeIdx >= 0 {
+	after := content[idx+len(obsOpenTag):]
+	if closeIdx := strings.Index(after, obsCloseTag); closeIdx >= 0 {
 		mem = after[:closeIdx]
 	} else {
 		mem = after
@@ -442,9 +442,9 @@ func stripMemoryOpenAIJSON(body []byte) (mem string, cleaned []byte, ok bool) {
 
 // ── Finalize ─────────────────────────────────────────────────────────────────
 
-// Finalize completes processing and returns the extracted memory content.
+// Finalize completes processing and returns the extracted observation content.
 // Must be called after all Write calls (i.e., after forwardRequest returns).
-func (mc *memoryCapture) Finalize() string {
+func (mc *obsCapture) Finalize() string {
 	if !mc.isStreaming {
 		return mc.finalizeNonStreaming()
 	}
@@ -452,30 +452,30 @@ func (mc *memoryCapture) Finalize() string {
 	if mc.sseBuf.Len() > 0 {
 		_, _ = mc.w.Write(mc.sseBuf.Bytes())
 	}
-	// If we held an event waiting for a potential <memory> that never arrived,
+	// If we held an event waiting for a potential <obs> that never arrived,
 	// forward it now.
-	if mc.heldEvent != nil && mc.memState == stateSearching {
+	if mc.heldEvent != nil && mc.obsState == stateSearching {
 		_, _ = mc.w.Write(mc.heldEvent)
 		mc.heldEvent = nil
 	}
-	return strings.TrimSpace(mc.memBuf.String())
+	return strings.TrimSpace(mc.obsBuf.String())
 }
 
 // ── Injection ─────────────────────────────────────────────────────────────────
 
-// injectMemoryInstruction injects the memory annotation into the request body:
-// always appends the instruction to the system prompt; optionally also prepends
-// a per-turn reminder to the last user message when ENABLE_SYSTEM_REMINDER is set.
-func injectMemoryInstruction(body []byte, format string) []byte {
+// injectObsInstruction injects the observation directive into the request body:
+// always appends the instruction to the system prompt; optionally also appends
+// a per-turn reminder to every user message when ENABLE_SYSTEM_REMINDER is set.
+func injectObsInstruction(body []byte, format string) []byte {
 	switch format {
 	case "anthropic":
-		body = injectAnthropicSystem(body, memoryInstruction)
+		body = injectAnthropicSystem(body, obsInstruction)
 		if systemReminderEnabled {
 			body = injectAnthropicUserReminder(body)
 		}
 		return body
 	case "openai":
-		body = injectOpenAISystem(body, memoryInstruction)
+		body = injectOpenAISystem(body, obsInstruction)
 		if systemReminderEnabled {
 			body = injectOpenAIUserReminder(body)
 		}
@@ -499,7 +499,7 @@ func hasToolResult(blocks []map[string]json.RawMessage) bool {
 }
 
 func injectAnthropicUserReminder(body []byte) []byte {
-	reminder := memoryUserReminder
+	reminder := obsReminder
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(body, &obj); err != nil {
 		return body
@@ -517,7 +517,7 @@ func injectAnthropicUserReminder(body []byte) []byte {
 		}
 		var contentStr string
 		if err := json.Unmarshal(msg["content"], &contentStr); err == nil {
-			messages[i]["content"] = rawJSON(reminder + contentStr)
+			messages[i]["content"] = rawJSON(contentStr + reminder)
 			modified = true
 			continue
 		}
@@ -526,13 +526,17 @@ func injectAnthropicUserReminder(body []byte) []byte {
 			continue
 		}
 		if hasToolResult(blocks) {
+			if newBlocks, ok := injectIntoLastToolResult(blocks, reminder); ok {
+				messages[i]["content"] = rawJSON(newBlocks)
+				modified = true
+			}
 			continue
 		}
 		reminderBlock := map[string]json.RawMessage{
 			"type": rawJSON("text"),
 			"text": rawJSON(reminder),
 		}
-		messages[i]["content"] = rawJSON(append([]map[string]json.RawMessage{reminderBlock}, blocks...))
+		messages[i]["content"] = rawJSON(append(blocks, reminderBlock))
 		modified = true
 	}
 	if !modified {
@@ -542,8 +546,60 @@ func injectAnthropicUserReminder(body []byte) []byte {
 	return repack(obj, body)
 }
 
+// injectIntoLastToolResult appends reminder to the content of the last
+// tool_result block in a content block array.
+func injectIntoLastToolResult(blocks []map[string]json.RawMessage, reminder string) ([]map[string]json.RawMessage, bool) {
+	lastIdx := -1
+	for i, block := range blocks {
+		var blockType string
+		json.Unmarshal(block["type"], &blockType) //nolint:errcheck
+		if blockType == "tool_result" {
+			lastIdx = i
+		}
+	}
+	if lastIdx == -1 {
+		return blocks, false
+	}
+	block := blocks[lastIdx]
+
+	// content as plain string (most common)
+	var contentStr string
+	if err := json.Unmarshal(block["content"], &contentStr); err == nil {
+		block["content"] = rawJSON(contentStr + reminder)
+		blocks[lastIdx] = block
+		return blocks, true
+	}
+
+	// content as array of content blocks
+	var contentBlocks []map[string]json.RawMessage
+	if err := json.Unmarshal(block["content"], &contentBlocks); err == nil {
+		for j := len(contentBlocks) - 1; j >= 0; j-- {
+			var t string
+			json.Unmarshal(contentBlocks[j]["type"], &t) //nolint:errcheck
+			if t == "text" {
+				var text string
+				json.Unmarshal(contentBlocks[j]["text"], &text) //nolint:errcheck
+				contentBlocks[j]["text"] = rawJSON(text + reminder)
+				block["content"] = rawJSON(contentBlocks)
+				blocks[lastIdx] = block
+				return blocks, true
+			}
+		}
+		// No text block found — append one.
+		contentBlocks = append(contentBlocks, map[string]json.RawMessage{
+			"type": rawJSON("text"),
+			"text": rawJSON(reminder),
+		})
+		block["content"] = rawJSON(contentBlocks)
+		blocks[lastIdx] = block
+		return blocks, true
+	}
+
+	return blocks, false
+}
+
 func injectOpenAIUserReminder(body []byte) []byte {
-	reminder := memoryUserReminder
+	reminder := obsReminder
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(body, &obj); err != nil {
 		return body
@@ -556,16 +612,34 @@ func injectOpenAIUserReminder(body []byte) []byte {
 	for i, msg := range messages {
 		var role string
 		json.Unmarshal(msg["role"], &role) //nolint:errcheck
-		if role != "user" {
-			continue
+		switch role {
+		case "user":
+			var content string
+			if err := json.Unmarshal(msg["content"], &content); err != nil {
+				// Non-string content (e.g. multimodal array) — skip.
+				continue
+			}
+			messages[i]["content"] = rawJSON(content + reminder)
+			modified = true
+
+		case "tool":
+			// Inject only into the last tool message of each consecutive run.
+			isLast := i == len(messages)-1
+			if !isLast {
+				var nextRole string
+				json.Unmarshal(messages[i+1]["role"], &nextRole) //nolint:errcheck
+				isLast = nextRole != "tool"
+			}
+			if !isLast {
+				continue
+			}
+			var content string
+			if err := json.Unmarshal(msg["content"], &content); err != nil {
+				continue
+			}
+			messages[i]["content"] = rawJSON(content + reminder)
+			modified = true
 		}
-		var content string
-		if err := json.Unmarshal(msg["content"], &content); err != nil {
-			// Non-string content (e.g. multimodal array) — skip.
-			continue
-		}
-		messages[i]["content"] = rawJSON(reminder + content)
-		modified = true
 	}
 	if !modified {
 		return body

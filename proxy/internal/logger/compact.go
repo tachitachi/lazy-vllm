@@ -215,7 +215,7 @@ func (c *CompactLogger) AddMessageToSession(sessionID, messageHash string, durat
 	return err
 }
 
-// SetSessionSummary stores the extracted memory observation for a session.
+// SetSessionSummary stores the extracted observation for a session.
 func (c *CompactLogger) SetSessionSummary(sessionID, summary string) error {
 	_, err := c.db.ExecContext(context.Background(),
 		`UPDATE sessions SET summary = ? WHERE id = ?`,
