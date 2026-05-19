@@ -184,6 +184,9 @@ func (s *Server) forwardWithLogging(
 		if err := compactLogger.SetSessionSummary(sessionID, obsContent); err != nil {
 			slog.Warn("compact logger: set session summary failed", "err", err)
 		}
+		if s.MemoryIngestURL != "" {
+			go ingestToMemory(s.MemoryIngestURL, sessionID, obsContent, model, format, tokenCount)
+		}
 	}
 }
 

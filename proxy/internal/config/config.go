@@ -56,10 +56,11 @@ type RouteRule struct {
 
 // Config holds the proxy's configuration parsed from environment variables.
 type Config struct {
-	Backends     []Backend
-	RoutingRules []RouteRule
-	Port         int
-	LogDir       string
+	Backends        []Backend
+	RoutingRules    []RouteRule
+	Port            int
+	LogDir          string
+	MemoryIngestURL string
 }
 
 // LoadConfig reads configuration from environment variables.
@@ -83,9 +84,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &Config{
-		Backends:     backends,
-		RoutingRules: routingRules,
-		Port:         EnvIntOr("PORT", 8002),
-		LogDir:       EnvOr("LOG_DIR", ""),
+		Backends:        backends,
+		RoutingRules:    routingRules,
+		Port:            EnvIntOr("PORT", 8002),
+		LogDir:          EnvOr("LOG_DIR", ""),
+		MemoryIngestURL: EnvOr("MEMORY_INGEST_URL", ""),
 	}, nil
 }

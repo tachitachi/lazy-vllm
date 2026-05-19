@@ -30,9 +30,10 @@ func main() {
 	levelVar.Set(config.ParseLogLevel(config.EnvOr("LOG_LEVEL", "INFO")))
 
 	s := &proxy.Server{
-		Backends:     cfg.Backends,
-		RoutingRules: cfg.RoutingRules,
-		LevelVar:     levelVar,
+		Backends:        cfg.Backends,
+		RoutingRules:    cfg.RoutingRules,
+		LevelVar:        levelVar,
+		MemoryIngestURL: cfg.MemoryIngestURL,
 	}
 
 	var compactLogger *logger.CompactLogger

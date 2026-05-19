@@ -7,21 +7,27 @@ A local LLM infrastructure stack built around Qwen models — routing proxy, obs
 1. **Smart routing** — A proxy layer over multiple vLLM backends for fast model selection, context-size-aware routing, and instant flash responses.
 2. **Observability** — Grafana dashboards for model metrics, host metrics, GPU metrics, and Docker container metrics.
 3. **Message logging** — Full request/response capture with a web UI for debugging and visibility into every LLM interaction.
-4. **Sandboxed coding** — Claude Code running locally against your own models, isolated in Docker.
-5. **One-command deploy** — `docker compose up -d` starts the entire stack.
+4. **Semantic memory** — The proxy extracts a one-sentence observation from every session and embeds it into ChromaDB. An MCP server exposes `search_memories` so Claude Code can retrieve relevant past sessions by semantic similarity.
+5. **Sandboxed coding** — Claude Code running locally against your own models, isolated in Docker.
+6. **One-command deploy** — `docker compose up -d` starts the entire stack.
 
 ## Architecture
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌──────────────────────────────────┐
 │  Open-WebUI │───▶│  Proxy (Go)  │───▶│  vLLM: Qwen3.6-27B (reasoning)  │
-│             │    │              │    │  vLLM: Qwen3.6-35B-A4B (flash)   │
-│  Client     │────▶│  Agent Graph │───▶│  vLLM: Qwen3.6-35B-A4B (reasoning)│
-└─────────────┘    └──────────────┘    └──────────────────────────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │  Prometheus │
-                    │  Grafana    │
+│             │    │  :8002       │    │  vLLM: Qwen3.6-35B-A4B (flash)   │
+│  Client     │────▶│  Agent Graph │───▶│  vLLM: Qwen3.6-35B-A4B (1M ctx) │
+└─────────────┘    └──────┬───────┘    └──────────────────────────────────┘
+                           │ extract obs
+                    ┌──────▼───────┐    ┌──────────────┐
+                    │  SQLite      │    │  Memory      │
+                    │  (sessions)  │    │  Service     │◀── Claude Code
+                    └──────────────┘    │  :8020       │    (MCP SSE)
+                                        │  ChromaDB    │
+                    ┌──────────────┐    │  embeddings  │
+                    │  Prometheus  │◀───┘──────────────┘
+                    │  Grafana     │
                     └─────────────┘
 ```
 
@@ -31,6 +37,7 @@ A local LLM infrastructure stack built around Qwen models — routing proxy, obs
 |---------|------|-------------|
 | **Proxy** | 8002 | Reverse proxy with flash models, compact logging, token-based routing |
 | **Agent Graph** | 8002 | Multi-step agent pipelines with classify→respond graphs |
+| **Memory** | 8020 | Semantic memory: ChromaDB embeddings + MCP SSE server for `search_memories` |
 | **Open-WebUI** | 3000 | Chat interface |
 | **Grafana** | 3001 | Observability dashboards |
 | **Prometheus** | 9090 | Metrics collection |
@@ -102,6 +109,36 @@ Config (`~/.claude/`) persists in a Docker named volume. See [🐳 Claude Local]
 
 The `agent/` module is a code-defined agent execution engine. See [Agent Graph Framework](#-agent-graph-framework) below for primitives and examples.
 
+## 🧠 Semantic Memory
+
+Every session routed through the proxy produces an `<obs>` block — a 1–3 sentence summary of what was asked and what was done. The proxy strips it from the response (the client never sees it) and stores it in two places:
+
+1. **SQLite** — `sessions.summary` column alongside the full message history
+2. **ChromaDB** — embedded with `all-MiniLM-L6-v2` for semantic search
+
+Claude Code can query past sessions via an MCP tool:
+
+```
+search_memories("authentication bug in proxy handler")
+→ [{ session_id, summary, model, token_count, created_at_ms }, ...]
+```
+
+### Setup
+
+The memory service starts automatically with `docker compose up -d`. The `.mcp.json` at the project root pre-registers it with Claude Code:
+
+```json
+{
+  "mcpServers": {
+    "lazy-memory": { "type": "sse", "url": "http://localhost:8020/mcp/sse" }
+  }
+}
+```
+
+After Claude Code approves the server (one-time prompt), `search_memories` is available in every session within this project.
+
+See [memory/README.md](memory/README.md) for full architecture details.
+
 ## 📂 Project Structure
 
 ```
@@ -110,15 +147,17 @@ The `agent/` module is a code-defined agent execution engine. See [Agent Graph F
 ├── Dockerfile.gemma4          # vLLM engine build (Qwen models)
 ├── Dockerfile.claude          # Claude Code container
 ├── Dockerfile.opencode        # Opencode service
+├── .mcp.json                  # MCP server registration for Claude Code
 ├── scripts/                   # Install, uninstall, entrypoint scripts
-├── proxy/                      # Routing proxy (Go) — flash, logging, token routing
-├── agent/                      # Agent Graph Framework (Go)
-├── router/                     # Thinking-Router (Go)
-├── opencode/                   # Opencode service
-├── grafana/                    # Grafana dashboards
-├── prometheus/                 # Prometheus config
+├── proxy/                     # Routing proxy (Go) — flash, logging, token routing
+├── memory/                    # Semantic memory service (Python) — ChromaDB + MCP
+├── agent/                     # Agent Graph Framework (Go)
+├── router/                    # Thinking-Router (Go)
+├── opencode/                  # Opencode service
+├── grafana/                   # Grafana dashboards
+├── prometheus/                # Prometheus config
 ├── synthetic-ui/              # Data labeling UI
-└── assets/                      # Screenshots and media
+└── assets/                    # Screenshots and media
 ```
 
 ---
