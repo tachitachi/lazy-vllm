@@ -332,11 +332,17 @@ function renderSessionDetail(session, msgs, rawReq) {
   const modelBadge = session.model
     ? `<span class="text-xs text-indigo-300 font-mono">${escHtml(session.model)}</span>`
     : '';
+  const attributionBadge = (session.user || session.project)
+    ? `<span class="text-xs text-teal-400 font-mono" title="${escAttr(session.project || '')}">${
+        [session.user ? escHtml(session.user) : '', session.project ? escHtml(session.project) : ''].filter(Boolean).join(' · ')
+      }</span>`
+    : '';
   let html = `<div class="mb-6">
     <div class="flex flex-wrap items-center gap-3 mb-2">
       <span class="font-mono text-xs text-gray-500">${escHtml(session.id)}</span>
       <span class="text-xs px-2 py-0.5 rounded bg-emerald-900/50 text-emerald-300 border border-emerald-700">compact</span>
       ${modelBadge}
+      ${attributionBadge}
       <span class="text-xs text-gray-400">${fmtDate(session.created_at)}</span>
       <span class="text-xs text-gray-500">${msgs ? msgs.length : 0} message(s)</span>
     </div>`;
@@ -475,6 +481,11 @@ function renderSessionsList(sessions) {
     const summary = s.summary
       ? `<div class="text-xs text-gray-400 truncate mt-0.5" title="${escAttr(s.summary)}">${escHtml(s.summary.slice(0, 120))}</div>`
       : '';
+    const attribution = (s.user || s.project)
+      ? `<div class="text-xs text-teal-600 truncate mt-0.5" title="${escAttr([s.user, s.project].filter(Boolean).join(' · '))}">${
+          [s.user ? escHtml(s.user) : '', s.project ? escHtml(baseName(s.project)) : ''].filter(Boolean).join(' · ')
+        }</div>`
+      : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
            onclick="selectSession('${escHtml(s.id)}')">
@@ -494,6 +505,7 @@ function renderSessionsList(sessions) {
             ${s.last_duration_ms ? `<span class="text-xs text-green-400">${fmtDuration(s.last_duration_ms)}</span>` : ''}
           </span>
         </div>
+        ${attribution}
         ${summary}
       </div>`;
   }).join('');
@@ -609,6 +621,12 @@ function escHtml(s) {
 
 function escAttr(s) {
   return String(s ?? '').replace(/"/g,'\\"');
+}
+
+function baseName(path) {
+  if (!path) return '';
+  const parts = path.split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path;
 }
 
 // ── Init ─────────────────────────────────────────────────────
