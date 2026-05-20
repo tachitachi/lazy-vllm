@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -20,7 +22,7 @@ import (
 // Messages are globally deduplicated by SHA256(body).
 // Sessions reference messages via a join table and own a tools_hash.
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 // CompactSession summarizes a stored conversation session.
 type CompactSession struct {
@@ -42,6 +44,34 @@ type CompactSessionMessage struct {
 	Body        string    `json:"body"`
 	CreatedAt   time.Time `json:"created_at"`
 	DurationMS  int64     `json:"duration_ms"`
+}
+
+// RawRequest holds the raw inbound request for a session.
+type RawRequest struct {
+	SessionID string            `json:"session_id"`
+	Path      string            `json:"path"`
+	Headers   map[string]string `json:"headers"`
+	Body      []byte            `json:"body"`
+	CreatedAt time.Time         `json:"created_at"`
+}
+
+var capturedRequestHeaders = []string{"Authorization", "x-api-key", "anthropic-version", "anthropic-beta"}
+var redactedRequestHeaders = map[string]bool{"Authorization": true, "x-api-key": true}
+
+// CaptureHeaders extracts a filtered subset of HTTP headers for debug logging.
+// Auth header values are replaced with "[redacted]".
+func CaptureHeaders(h http.Header) map[string]string {
+	result := make(map[string]string)
+	for _, name := range capturedRequestHeaders {
+		if v := h.Get(name); v != "" {
+			if redactedRequestHeaders[name] {
+				result[name] = "[redacted]"
+			} else {
+				result[name] = v
+			}
+		}
+	}
+	return result
 }
 
 type CompactLogger struct {
@@ -113,66 +143,90 @@ func NewCompact(logDir string) (*CompactLogger, error) {
 		return nil, fmt.Errorf("compact logger: enable foreign keys: %w", err)
 	}
 
-	// Check schema version and migrate if needed.
+	// Read current schema version (0 if table or row doesn't exist yet).
 	var version int
-	err = db.QueryRowContext(ctx, "SELECT version FROM schema_version").Scan(&version)
-	if err == nil && version >= schemaVersion {
-		// Schema is up to date.
-		return &CompactLogger{db: db}, nil
-	}
+	_ = db.QueryRowContext(ctx, "SELECT version FROM schema_version").Scan(&version)
 
-	// Drop old tables and recreate with optimized schema.
-	for _, tbl := range []string{"session_messages", "sessions", "messages", "tools", "schema_version"} {
-		db.ExecContext(ctx, "DROP TABLE IF EXISTS "+tbl) //nolint:errcheck
-	}
-
-	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS schema_version (
-			version INTEGER PRIMARY KEY
-		)`,
-		`CREATE TABLE IF NOT EXISTS tools (
-			hash       BLOB    PRIMARY KEY,
-			body       BLOB    NOT NULL,
-			created_at INTEGER NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS messages (
-			hash       BLOB    PRIMARY KEY,
-			body       BLOB    NOT NULL,
-			created_at INTEGER NOT NULL
-		)`,
-		`CREATE TABLE IF NOT EXISTS sessions (
-			id          TEXT    PRIMARY KEY,
-			format      TEXT    NOT NULL,
-			model       TEXT    NOT NULL DEFAULT '',
-			token_count INTEGER NOT NULL DEFAULT 0,
-			tools_hash  BLOB,
-			summary     TEXT,
-			created_at  INTEGER NOT NULL,
-			FOREIGN KEY(tools_hash) REFERENCES tools(hash)
-		)`,
-		`CREATE TABLE IF NOT EXISTS session_messages (
-			session_id   TEXT    NOT NULL,
-			message_hash BLOB    NOT NULL,
-			sequence     INTEGER NOT NULL,
-			duration_ms  INTEGER NOT NULL DEFAULT 0,
-			UNIQUE(session_id, sequence),
-			FOREIGN KEY(session_id) REFERENCES sessions(id),
-			FOREIGN KEY(message_hash) REFERENCES messages(hash)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC)`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
+	if version < schemaVersion {
+		if err := migrateCompact(ctx, db, version); err != nil {
 			_ = db.Close()
-			return nil, fmt.Errorf("compact logger: create schema: %w", err)
+			return nil, fmt.Errorf("compact logger: migrate: %w", err)
 		}
-	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO schema_version (version) VALUES (?)`, schemaVersion); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("compact logger: insert schema version: %w", err)
 	}
 
 	return &CompactLogger{db: db}, nil
+}
+
+// migrateCompact applies incremental schema migrations from fromVersion to schemaVersion.
+func migrateCompact(ctx context.Context, db *sql.DB, fromVersion int) error {
+	if fromVersion < 3 {
+		// Drop any partial/legacy state and build the v3 base schema from scratch.
+		for _, tbl := range []string{"session_messages", "sessions", "messages", "tools", "schema_version", "raw_requests"} {
+			db.ExecContext(ctx, "DROP TABLE IF EXISTS "+tbl) //nolint:errcheck
+		}
+		stmts := []string{
+			`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)`,
+			`CREATE TABLE IF NOT EXISTS tools (
+				hash       BLOB    PRIMARY KEY,
+				body       BLOB    NOT NULL,
+				created_at INTEGER NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS messages (
+				hash       BLOB    PRIMARY KEY,
+				body       BLOB    NOT NULL,
+				created_at INTEGER NOT NULL
+			)`,
+			`CREATE TABLE IF NOT EXISTS sessions (
+				id          TEXT    PRIMARY KEY,
+				format      TEXT    NOT NULL,
+				model       TEXT    NOT NULL DEFAULT '',
+				token_count INTEGER NOT NULL DEFAULT 0,
+				tools_hash  BLOB,
+				summary     TEXT,
+				created_at  INTEGER NOT NULL,
+				FOREIGN KEY(tools_hash) REFERENCES tools(hash)
+			)`,
+			`CREATE TABLE IF NOT EXISTS session_messages (
+				session_id   TEXT    NOT NULL,
+				message_hash BLOB    NOT NULL,
+				sequence     INTEGER NOT NULL,
+				duration_ms  INTEGER NOT NULL DEFAULT 0,
+				UNIQUE(session_id, sequence),
+				FOREIGN KEY(session_id) REFERENCES sessions(id),
+				FOREIGN KEY(message_hash) REFERENCES messages(hash)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at DESC)`,
+			`INSERT OR REPLACE INTO schema_version (version) VALUES (3)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("v3 base schema: %w", err)
+			}
+		}
+		fromVersion = 3
+	}
+
+	if fromVersion < 4 {
+		stmts := []string{
+			`CREATE TABLE IF NOT EXISTS raw_requests (
+				session_id TEXT    NOT NULL,
+				path       TEXT    NOT NULL,
+				headers    TEXT    NOT NULL DEFAULT '{}',
+				body       BLOB    NOT NULL,
+				created_at INTEGER NOT NULL,
+				FOREIGN KEY(session_id) REFERENCES sessions(id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_raw_requests_session ON raw_requests(session_id)`,
+			`UPDATE schema_version SET version = 4`,
+		}
+		for _, stmt := range stmts {
+			if _, err := db.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("v4 raw_requests: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // Close closes the underlying database connection.
@@ -359,4 +413,34 @@ func (c *CompactLogger) GetTools(hash string) (string, error) {
 		return "", err
 	}
 	return string(decompressData(body)), nil
+}
+
+// StoreRawRequest saves the raw inbound request for a session.
+func (c *CompactLogger) StoreRawRequest(sessionID, path string, headers map[string]string, body []byte) error {
+	headersJSON, _ := json.Marshal(headers)
+	compressed := compressData(body)
+	_, err := c.db.ExecContext(context.Background(),
+		`INSERT INTO raw_requests (session_id, path, headers, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+		sessionID, path, string(headersJSON), compressed, time.Now().UnixMilli(),
+	)
+	return err
+}
+
+// GetRawRequest retrieves the raw request for a session.
+func (c *CompactLogger) GetRawRequest(sessionID string) (*RawRequest, error) {
+	var rr RawRequest
+	var headersStr string
+	var body []byte
+	var created int64
+	err := c.db.QueryRowContext(context.Background(),
+		`SELECT session_id, path, headers, body, created_at FROM raw_requests WHERE session_id = ?`,
+		sessionID,
+	).Scan(&rr.SessionID, &rr.Path, &headersStr, &body, &created)
+	if err != nil {
+		return nil, err
+	}
+	rr.Body = decompressData(body)
+	rr.CreatedAt = time.UnixMilli(created)
+	_ = json.Unmarshal([]byte(headersStr), &rr.Headers)
+	return &rr, nil
 }

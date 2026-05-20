@@ -101,7 +101,7 @@ func (s *Server) forwardWithLogging(
 	bodyToForward := body
 	if isFlash {
 		bodyToForward = injectDisableThinking(body)
-	} else if compactLogger != nil {
+	} else if compactLogger != nil && !isProbeRequest(bodyToForward) {
 		bodyToForward = injectObsInstruction(bodyToForward, format)
 	}
 
@@ -147,6 +147,12 @@ func (s *Server) forwardWithLogging(
 		sessionID, err = compactLogger.StartSession(toolsHash, format, model, tokenCount)
 		if err != nil {
 			slog.Warn("compact logger: start session failed", "err", err)
+		}
+
+		if sessionID != "" {
+			if err := compactLogger.StoreRawRequest(sessionID, r.RequestURI, logger.CaptureHeaders(r.Header), body); err != nil {
+				slog.Warn("compact logger: store raw request failed", "err", err)
+			}
 		}
 
 		// Store each message individually (globally deduplicated).

@@ -74,6 +74,7 @@ func main() {
 		mux.HandleFunc("GET /ui/logs", compactLogger.HandleLogsUI)
 		mux.HandleFunc("GET /api/sessions", compactLogger.HandleSessionsList)
 		mux.HandleFunc("GET /api/sessions/{id}", compactLogger.HandleSessionDetail)
+		mux.HandleFunc("GET /api/sessions/{id}/raw", compactLogger.HandleRawRequest)
 		mux.HandleFunc("GET /api/tools/{hash}", compactLogger.HandleToolsDetail)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

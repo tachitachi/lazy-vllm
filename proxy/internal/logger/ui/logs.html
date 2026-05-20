@@ -198,6 +198,28 @@ async function fetchSessionDetail(id) {
   return res.json();
 }
 
+async function fetchRawRequest(id) {
+  const res = await fetch(`/api/sessions/${id}/raw`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function buildCurlCommand(raw) {
+  const baseURL = window.location.protocol + '//' + window.location.host;
+  const lines = [`curl -X POST '${baseURL}${escHtml(raw.path)}'`];
+  const headers = raw.headers || {};
+  for (const [k, v] of Object.entries(headers)) {
+    lines.push(`  -H '${k}: ${v}'`);
+  }
+  lines.push(`  -H 'Content-Type: application/json'`);
+  let body = raw.body || '';
+  try { body = JSON.stringify(JSON.parse(body), null, 2); } catch {}
+  // Escape single quotes for shell safety
+  const escapedBody = body.replace(/'/g, "'\\''");
+  lines.push(`  -d '${escapedBody}'`);
+  return lines.join(' \\\n');
+}
+
 // ── Rendering ────────────────────────────────────────────────
 
 function fmtDuration(ms) {
@@ -301,7 +323,7 @@ function renderMessage(msg) {
 
 // ── Session Detail ───────────────────────────────────────────
 
-function renderSessionDetail(session, msgs) {
+function renderSessionDetail(session, msgs, rawReq) {
   if (!session) {
     return '<div class="text-gray-500 text-center mt-32 text-sm">No session data.</div>';
   }
@@ -318,6 +340,25 @@ function renderSessionDetail(session, msgs) {
       <span class="text-xs text-gray-400">${fmtDate(session.created_at)}</span>
       <span class="text-xs text-gray-500">${msgs ? msgs.length : 0} message(s)</span>
     </div>`;
+
+  // Curl section
+  if (rawReq) {
+    const curlId = 'curl-body-' + session.id.slice(0, 8);
+    const curlCmd = buildCurlCommand(rawReq);
+    html += `
+      <details class="mt-2 bg-gray-900 rounded border border-gray-700">
+        <summary class="flex items-center justify-between px-4 py-2 text-sm text-gray-300 hover:text-white cursor-pointer">
+          <span class="font-mono text-green-400">$ curl</span>
+          <span class="text-gray-600 text-xs">▾</span>
+        </summary>
+        <div class="p-4 border-t border-gray-700">
+          <div class="flex justify-end mb-2">
+            <button onclick="copyToClipboard(this, '${curlId}')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 px-2 py-1 rounded border border-gray-600">Copy</button>
+          </div>
+          <pre id="${curlId}" class="json-block text-green-300 bg-gray-950 p-3 rounded overflow-x-auto text-xs">${escHtml(curlCmd)}</pre>
+        </div>
+      </details>`;
+  }
 
   // Observation summary
   if (session.summary) {
@@ -475,8 +516,11 @@ async function selectSession(id) {
   document.getElementById('request-list').innerHTML = renderSessionsList(allSessions);
   document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
   try {
-    const data = await fetchSessionDetail(id);
-    document.getElementById('detail-panel').innerHTML = renderSessionDetail(data.session, data.messages);
+    const [data, rawReq] = await Promise.all([
+      fetchSessionDetail(id),
+      fetchRawRequest(id),
+    ]);
+    document.getElementById('detail-panel').innerHTML = renderSessionDetail(data.session, data.messages, rawReq);
     loadToolsBody(data.session.tools_hash);
   } catch (e) {
     console.error(e);

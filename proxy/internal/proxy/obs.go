@@ -462,6 +462,19 @@ func (mc *obsCapture) Finalize() string {
 
 // ── Injection ─────────────────────────────────────────────────────────────────
 
+// isProbeRequest returns true when max_tokens == 1, which is the signal used
+// by Claude Code for internal one-token probes (e.g. "count", "quota").
+// These must not have obs instructions injected.
+func isProbeRequest(body []byte) bool {
+	var obj struct {
+		MaxTokens int `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return false
+	}
+	return obj.MaxTokens == 1
+}
+
 // injectObsInstruction injects the observation directive into the request body:
 // always appends the instruction to the system prompt; optionally also appends
 // a per-turn reminder to every user message when ENABLE_SYSTEM_REMINDER is set.

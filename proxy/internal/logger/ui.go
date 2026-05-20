@@ -64,3 +64,25 @@ func (c *CompactLogger) HandleToolsDetail(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(body))
 }
+
+// HandleRawRequest returns the raw inbound request stored for a session.
+func (c *CompactLogger) HandleRawRequest(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	rr, err := c.GetRawRequest(id)
+	if err != nil {
+		http.Error(w, "raw request not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"session_id": rr.SessionID,
+		"path":       rr.Path,
+		"headers":    rr.Headers,
+		"body":       string(rr.Body),
+		"created_at": rr.CreatedAt,
+	})
+}
