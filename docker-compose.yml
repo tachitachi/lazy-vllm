@@ -277,6 +277,7 @@ services:
       - "8020:8020"
     environment:
       CHROMA_PATH: /data
+      LOG_LEVEL: INFO
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8020/health"]
       interval: 30s

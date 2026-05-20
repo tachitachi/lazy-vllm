@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 import chromadb
@@ -8,12 +9,16 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 CHROMA_PATH = os.getenv("CHROMA_PATH", "/data")
 PORT = int(os.getenv("PORT", "8020"))
 DEFAULT_THRESHOLD = float(os.getenv("MEMORY_THRESHOLD", "0.5"))
+
+_log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+logging.basicConfig(level=_log_level, format="%(levelname)s  %(message)s")
+log = logging.getLogger("memory")
 
 chroma = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma.get_or_create_collection(
@@ -156,52 +161,75 @@ async def handle_search(request: Request):
     try:
         data = await request.json()
     except Exception:
-        return PlainTextResponse("")
+        return JSONResponse({"text": "", "ids": []})
 
     query = data.get("query", "")
     threshold = float(data.get("threshold", DEFAULT_THRESHOLD))
     n = int(data.get("n", 5))
+    exclude_ids = set(data.get("exclude_ids", []))
 
     if not query:
-        return PlainTextResponse("")
+        return JSONResponse({"text": "", "ids": []})
+
+    log.debug("search query=%r threshold=%.2f n=%d exclude=%d", query, threshold, n, len(exclude_ids))
 
     count = collection.count()
     if count == 0:
-        return PlainTextResponse("")
+        return JSONResponse({"text": "", "ids": []})
 
     try:
+        fetch_n = min(n + len(exclude_ids), count)
         results = collection.query(
             query_texts=[query],
-            n_results=min(n, count),
+            n_results=fetch_n,
             where={"obs_type": {"$in": ["decision", "fact"]}},
             include=["documents", "metadatas", "distances"],
         )
     except Exception:
-        return PlainTextResponse("")
+        return JSONResponse({"text": "", "ids": []})
 
     lines = []
+    matched_ids = []
     for i, doc in enumerate(results["documents"][0]):
-        if results["distances"][0][i] > threshold:
-            continue
+        doc_id = results["ids"][0][i]
+        distance = results["distances"][0][i]
         meta = results["metadatas"][0][i] or {}
+        topic = parse_obs_field(doc, "topic") or "(no topic)"
+        excluded = doc_id in exclude_ids
+        log.debug(
+            "  candidate id=%s distance=%.4f topic=%r excluded=%s",
+            doc_id, distance, topic, excluded,
+        )
+        if excluded or distance > threshold:
+            continue
         lines.append(format_memory(doc, meta))
+        matched_ids.append(doc_id)
+
+    log.info("search returned %d/%d results ids=%s", len(matched_ids), fetch_n, matched_ids)
 
     if not lines:
-        return PlainTextResponse("")
+        return JSONResponse({"text": "", "ids": []})
 
-    return PlainTextResponse(
-        "Relevant past decisions from previous sessions:\n\n" + "\n\n".join(lines)
-    )
+    return JSONResponse({
+        "text": "Relevant past decisions from previous sessions:\n\n" + "\n\n".join(lines),
+        "ids": matched_ids,
+    })
 
 
 async def handle_health(request: Request):
     return JSONResponse({"ok": True, "sessions": collection.count()})
 
 
+class _SentResponse(Response):
+    async def __call__(self, scope, receive, send):
+        pass  # response already written by sse.handle_post_message via _send
+
+
 async def handle_post_message(request: Request):
     # SseServerTransport.handle_post_message is an ASGI callable (scope, receive, send),
-    # not a Starlette endpoint, so we must unwrap and forward.
+    # not a Starlette endpoint — it writes the response directly via _send.
     await sse.handle_post_message(request.scope, request.receive, request._send)
+    return _SentResponse()
 
 
 app = Starlette(
