@@ -8,11 +8,12 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 CHROMA_PATH = os.getenv("CHROMA_PATH", "/data")
 PORT = int(os.getenv("PORT", "8020"))
+DEFAULT_THRESHOLD = float(os.getenv("MEMORY_THRESHOLD", "0.5"))
 
 chroma = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma.get_or_create_collection(
@@ -66,6 +67,11 @@ async def list_tools() -> list[types.Tool]:
                         "description": "Number of results to return (default 5)",
                         "default": 5,
                     },
+                    "include_none": {
+                        "type": "boolean",
+                        "description": "Include type=none observations (default false — only decisions and facts)",
+                        "default": False,
+                    },
                 },
                 "required": ["query"],
             },
@@ -80,12 +86,22 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 
     query = arguments["query"]
     n = int(arguments.get("n_results", 5))
+    include_none = bool(arguments.get("include_none", False))
 
     count = collection.count()
     if count == 0:
         return [types.TextContent(type="text", text="[]")]
 
-    results = collection.query(query_texts=[query], n_results=min(n, count))
+    where_filter = None if include_none else {"obs_type": {"$in": ["decision", "fact"]}}
+    query_kwargs: dict = {"query_texts": [query], "n_results": min(n, count)}
+    if where_filter:
+        query_kwargs["where"] = where_filter
+
+    try:
+        results = collection.query(**query_kwargs)
+    except Exception:
+        return [types.TextContent(type="text", text="[]")]
+
     out = []
     for i, doc in enumerate(results["documents"][0]):
         meta = results["metadatas"][0][i] or {}
@@ -119,7 +135,7 @@ async def handle_ingest(request: Request):
         return JSONResponse({"error": "session_id and summary are required"}, status_code=400)
 
     obs_type = parse_obs_field(summary, "type")
-    if not obs_type or obs_type == "none":
+    if not obs_type:
         return JSONResponse({"ok": True, "skipped": True})
 
     collection.upsert(
@@ -136,6 +152,48 @@ async def handle_ingest(request: Request):
     return JSONResponse({"ok": True})
 
 
+async def handle_search(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return PlainTextResponse("")
+
+    query = data.get("query", "")
+    threshold = float(data.get("threshold", DEFAULT_THRESHOLD))
+    n = int(data.get("n", 5))
+
+    if not query:
+        return PlainTextResponse("")
+
+    count = collection.count()
+    if count == 0:
+        return PlainTextResponse("")
+
+    try:
+        results = collection.query(
+            query_texts=[query],
+            n_results=min(n, count),
+            where={"obs_type": {"$in": ["decision", "fact"]}},
+            include=["documents", "metadatas", "distances"],
+        )
+    except Exception:
+        return PlainTextResponse("")
+
+    lines = []
+    for i, doc in enumerate(results["documents"][0]):
+        if results["distances"][0][i] > threshold:
+            continue
+        meta = results["metadatas"][0][i] or {}
+        lines.append(format_memory(doc, meta))
+
+    if not lines:
+        return PlainTextResponse("")
+
+    return PlainTextResponse(
+        "Relevant past decisions from previous sessions:\n\n" + "\n\n".join(lines)
+    )
+
+
 async def handle_health(request: Request):
     return JSONResponse({"ok": True, "sessions": collection.count()})
 
@@ -150,6 +208,7 @@ app = Starlette(
     routes=[
         Route("/health", handle_health),
         Route("/ingest", handle_ingest, methods=["POST"]),
+        Route("/search", handle_search, methods=["POST"]),
         Route("/mcp/sse", handle_sse),
         Route("/mcp/messages/", handle_post_message, methods=["POST"]),
     ]
