@@ -20,6 +20,30 @@ collection = chroma.get_or_create_collection(
     metadata={"hnsw:space": "cosine"},
 )
 
+
+def parse_obs_field(text: str, field: str) -> str:
+    for line in text.splitlines():
+        if line.startswith(f"{field}:"):
+            return line[len(field) + 1:].strip()
+    return ""
+
+
+def format_memory(doc: str, metadata: dict) -> str:
+    obs_type  = parse_obs_field(doc, "type") or metadata.get("obs_type", "")
+    topic     = parse_obs_field(doc, "topic")
+    claim     = parse_obs_field(doc, "claim") or doc
+    rationale = parse_obs_field(doc, "rationale")
+    scope     = parse_obs_field(doc, "scope")
+
+    label  = {"decision": "Decision", "fact": "Fact"}.get(obs_type, "Memory")
+    header = f"[{label}] {topic}"
+    if scope:
+        header += f" — {scope}"
+    parts = [header, claim]
+    if rationale:
+        parts.append(f"Reason: {rationale}")
+    return "\n".join(parts)
+
 mcp_server = Server("lazy-memory")
 sse = SseServerTransport("/mcp/messages/")
 
@@ -29,7 +53,7 @@ async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="search_memories",
-            description="Search past Claude Code sessions semantically. Returns sessions whose summaries are most similar to the query.",
+            description="Search past Claude Code sessions for decisions and domain facts. Returns formatted memory entries most similar to the query.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -64,13 +88,13 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
     results = collection.query(query_texts=[query], n_results=min(n, count))
     out = []
     for i, doc in enumerate(results["documents"][0]):
-        out.append(
-            {
-                "session_id": results["ids"][0][i],
-                "summary": doc,
-                **(results["metadatas"][0][i] or {}),
-            }
-        )
+        meta = results["metadatas"][0][i] or {}
+        out.append({
+            "session_id":    results["ids"][0][i],
+            "memory":        format_memory(doc, meta),
+            "obs_type":      meta.get("obs_type", ""),
+            "created_at_ms": meta.get("created_at_ms", 0),
+        })
     return [types.TextContent(type="text", text=json.dumps(out, indent=2))]
 
 
@@ -94,17 +118,20 @@ async def handle_ingest(request: Request):
     if not session_id or not summary:
         return JSONResponse({"error": "session_id and summary are required"}, status_code=400)
 
+    obs_type = parse_obs_field(summary, "type")
+    if not obs_type or obs_type == "none":
+        return JSONResponse({"ok": True, "skipped": True})
+
     collection.upsert(
         ids=[session_id],
         documents=[summary],
-        metadatas=[
-            {
-                "model": data.get("model", ""),
-                "format": data.get("format", ""),
-                "token_count": int(data.get("token_count", 0)),
-                "created_at_ms": int(data.get("created_at_ms", 0)),
-            }
-        ],
+        metadatas=[{
+            "model":         data.get("model", ""),
+            "format":        data.get("format", ""),
+            "token_count":   int(data.get("token_count", 0)),
+            "created_at_ms": int(data.get("created_at_ms", 0)),
+            "obs_type":      obs_type,
+        }],
     )
     return JSONResponse({"ok": True})
 
