@@ -127,7 +127,7 @@ func TestSessionWithMessages(t *testing.T) {
 
 	tools := []byte(`[{"type":"function","function":{"name":"calc"}}]`)
 	toolsHash := l.StoreTools(tools)
-	sessionID, err := l.StartSession(toolsHash, "openai", "claude-sonnet-4-6", 100)
+	sessionID, err := l.StartSession(toolsHash, "openai", "claude-sonnet-4-6", "", "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,9 +199,9 @@ func TestMessageCrossSessionDedup(t *testing.T) {
 func TestListSessions(t *testing.T) {
 	l := newTestLogger(t)
 
-	_, _ = l.StartSession("", "openai", "claude-sonnet-4-6", 0)
-	_, _ = l.StartSession("", "anthropic", "claude-sonnet-4-6-flash", 0)
-	_, _ = l.StartSession("", "openai", "", 0)
+	_, _ = l.StartSession("", "openai", "claude-sonnet-4-6", "", "", 0)
+	_, _ = l.StartSession("", "anthropic", "claude-sonnet-4-6-flash", "", "", 0)
+	_, _ = l.StartSession("", "openai", "", "", "", 0)
 
 	sessions, err := l.ListSessions(7)
 	if err != nil {
@@ -240,7 +240,7 @@ func TestGetTools(t *testing.T) {
 func TestSetSessionSummary(t *testing.T) {
 	l := newTestLogger(t)
 
-	sessionID, err := l.StartSession("", "anthropic", "claude-sonnet-4-6", 0)
+	sessionID, err := l.StartSession("", "anthropic", "claude-sonnet-4-6", "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,11 +275,11 @@ func TestSetSessionSummary(t *testing.T) {
 func TestListSessions_IncludesSummary(t *testing.T) {
 	l := newTestLogger(t)
 
-	idWithSummary, err := l.StartSession("", "anthropic", "claude-sonnet-4-6", 0)
+	idWithSummary, err := l.StartSession("", "anthropic", "claude-sonnet-4-6", "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = l.StartSession("", "anthropic", "claude-sonnet-4-6", 0)
+	_, err = l.StartSession("", "anthropic", "claude-sonnet-4-6", "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

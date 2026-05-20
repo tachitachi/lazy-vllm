@@ -143,16 +143,21 @@ async def handle_ingest(request: Request):
     if not obs_type:
         return JSONResponse({"ok": True, "skipped": True})
 
+    metadata = {
+        "model":         data.get("model", ""),
+        "format":        data.get("format", ""),
+        "token_count":   int(data.get("token_count", 0)),
+        "created_at_ms": int(data.get("created_at_ms", 0)),
+        "obs_type":      obs_type,
+    }
+    if user := data.get("user"):
+        metadata["user"] = user
+    if project := data.get("project"):
+        metadata["project"] = project
     collection.upsert(
         ids=[session_id],
         documents=[summary],
-        metadatas=[{
-            "model":         data.get("model", ""),
-            "format":        data.get("format", ""),
-            "token_count":   int(data.get("token_count", 0)),
-            "created_at_ms": int(data.get("created_at_ms", 0)),
-            "obs_type":      obs_type,
-        }],
+        metadatas=[metadata],
     )
     return JSONResponse({"ok": True})
 
@@ -167,22 +172,32 @@ async def handle_search(request: Request):
     threshold = float(data.get("threshold", DEFAULT_THRESHOLD))
     n = int(data.get("n", 5))
     exclude_ids = set(data.get("exclude_ids", []))
+    user = data.get("user") or ""
+    project = data.get("project") or ""
 
     if not query:
         return JSONResponse({"text": "", "ids": []})
 
-    log.debug("search query=%r threshold=%.2f n=%d exclude=%d", query, threshold, n, len(exclude_ids))
+    log.debug("search query=%r threshold=%.2f n=%d exclude=%d user=%r project=%r",
+              query, threshold, n, len(exclude_ids), user, project)
 
     count = collection.count()
     if count == 0:
         return JSONResponse({"text": "", "ids": []})
+
+    clauses = [{"obs_type": {"$in": ["decision", "fact"]}}]
+    if user:
+        clauses.append({"user": user})
+    if project:
+        clauses.append({"project": project})
+    where = {"$and": clauses} if len(clauses) > 1 else clauses[0]
 
     try:
         fetch_n = min(n + len(exclude_ids), count)
         results = collection.query(
             query_texts=[query],
             n_results=fetch_n,
-            where={"obs_type": {"$in": ["decision", "fact"]}},
+            where=where,
             include=["documents", "metadatas", "distances"],
         )
     except Exception:

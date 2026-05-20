@@ -10,6 +10,8 @@ THRESHOLD="${MEMORY_THRESHOLD:-0.5}"
 MEMORY_URL="${MEMORY_URL:-http://localhost:8020}"
 SEEN_FILE="${TMPDIR:-/tmp}/memory-seen-${SESSION_ID}"
 
+PROJECT=$(echo -n "$PWD" | base64 -w 0 | tr '+/' '-_' | tr -d '=')
+
 # Build exclude list from IDs already injected this session
 if [ -f "$SEEN_FILE" ]; then
     EXCLUDE_IDS=$(jq -Rsc 'split("\n") | map(select(length > 0))' < "$SEEN_FILE")
@@ -19,9 +21,11 @@ fi
 
 PAYLOAD=$(jq -n \
     --arg q "$PROMPT" \
+    --arg u "$USER" \
+    --arg p "$PROJECT" \
     --argjson t "$THRESHOLD" \
     --argjson e "$EXCLUDE_IDS" \
-    '{"query": $q, "threshold": $t, "exclude_ids": $e}')
+    '{"query": $q, "threshold": $t, "exclude_ids": $e, "user": $u, "project": $p}')
 
 RESPONSE=$(curl -s -f -X POST "${MEMORY_URL}/search" \
     -H "Content-Type: application/json" \

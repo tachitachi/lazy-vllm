@@ -88,7 +88,7 @@ func main() {
 
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      mux,
+		Handler:      proxy.UserProjectMiddleware(mux),
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 10 * time.Minute,
 		IdleTimeout:  120 * time.Second,

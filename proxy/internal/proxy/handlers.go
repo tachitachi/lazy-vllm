@@ -37,7 +37,7 @@ func flushCopy(w http.ResponseWriter, r io.Reader) {
 
 func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request, baseURL string, body []byte) {
 	upstream, err := http.NewRequestWithContext(ctx, r.Method,
-		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(body)))
+		baseURL+r.URL.RequestURI(), io.NopCloser(bytes.NewReader(body)))
 	if err != nil {
 		slog.Error("build upstream request failed", "err", err, "path", r.RequestURI)
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
@@ -130,6 +130,9 @@ func (s *Server) forwardWithLogging(
 		baseURL = resolveBackend(s.Backends, targetModel)
 	}
 
+	user := UserFromCtx(r.Context())
+	project := ProjectFromCtx(r.Context())
+
 	if compactLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, bodyToForward)
 		return
@@ -144,7 +147,7 @@ func (s *Server) forwardWithLogging(
 			toolsHash = compactLogger.StoreTools(toolsBlob)
 		}
 		var err error
-		sessionID, err = compactLogger.StartSession(toolsHash, format, model, tokenCount)
+		sessionID, err = compactLogger.StartSession(toolsHash, format, model, user, project, tokenCount)
 		if err != nil {
 			slog.Warn("compact logger: start session failed", "err", err)
 		}
@@ -191,7 +194,7 @@ func (s *Server) forwardWithLogging(
 			slog.Warn("compact logger: set session summary failed", "err", err)
 		}
 		if s.MemoryIngestURL != "" {
-			go ingestToMemory(s.MemoryIngestURL, sessionID, obsContent, model, format, tokenCount)
+			go ingestToMemory(s.MemoryIngestURL, sessionID, obsContent, model, format, user, project, tokenCount)
 		}
 	}
 }

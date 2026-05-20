@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+LAZY_VLLM_URL="${LAZY_VLLM_URL:-http://localhost:8002}"
+PROJECT=$(echo -n "$PWD" | base64 -w 0 | tr '+/' '-_' | tr -d '=')
+exec env ANTHROPIC_BASE_URL="$LAZY_VLLM_URL/user/$USER/project/$PROJECT" claude "$@"
