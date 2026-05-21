@@ -67,6 +67,17 @@ func forwardRequest(ctx context.Context, w http.ResponseWriter, r *http.Request,
 func (s *Server) HandleChatCompletions(
 	w http.ResponseWriter, r *http.Request, body []byte, compactLogger *logger.CompactLogger,
 ) {
+	provider := ProviderFromCtx(r.Context())
+	if provider != "" && provider != "local" {
+		p, _ := lookupProvider(s.Providers, provider)
+		model := modelFromBody(body)
+		tokenCount := 0
+		if p.CountTokens {
+			tokenCount = s.countOpenAITokens(p.URL, body)
+		}
+		s.forwardWithLogging(w, r, body, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, false)
+		return
+	}
 	model, cleanedBody := extractModel(body)
 	backend := findBackend(s.Backends, stripFlash(model))
 	tokenCount := 0
@@ -77,6 +88,17 @@ func (s *Server) HandleChatCompletions(
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, compactLogger *logger.CompactLogger) {
+	provider := ProviderFromCtx(r.Context())
+	if provider != "" && provider != "local" {
+		p, _ := lookupProvider(s.Providers, provider)
+		model := modelFromBody(body)
+		tokenCount := 0
+		if p.CountTokens {
+			tokenCount = s.countAnthropicTokens(p.URL, body)
+		}
+		s.forwardWithLogging(w, r, body, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, false)
+		return
+	}
 	model, cleanedBody := extractModel(body)
 	backend := findBackend(s.Backends, stripFlash(model))
 	tokenCount := 0
@@ -98,40 +120,49 @@ func (s *Server) forwardWithLogging(
 	model string,
 	isFlash bool,
 ) {
-	bodyToForward := body
-	if isFlash {
-		bodyToForward = injectDisableThinking(body)
-	} else if compactLogger != nil && !isProbeRequest(bodyToForward) {
-		bodyToForward = injectObsInstruction(bodyToForward, format)
-	}
+	provider := ProviderFromCtx(r.Context())
+	user     := UserFromCtx(r.Context())
+	project  := ProjectFromCtx(r.Context())
 
-	baseURL := resolveBackend(s.Backends, stripFlash(model))
+	var baseURL string
+	var bodyToForward []byte
+	if provider != "" && provider != "local" {
+		p, _ := lookupProvider(s.Providers, provider)
+		baseURL = p.URL
+		// Non-local: no FLASH injection; obs instruction still applies
+		if compactLogger != nil && !isProbeRequest(body) {
+			bodyToForward = injectObsInstruction(body, format)
+		} else {
+			bodyToForward = body
+		}
+	} else {
+		// Local: apply FLASH and routing rules
+		if isFlash {
+			bodyToForward = injectDisableThinking(body)
+		} else if compactLogger != nil && !isProbeRequest(body) {
+			bodyToForward = injectObsInstruction(body, format)
+		} else {
+			bodyToForward = body
+		}
+		baseURL = resolveBackend(s.Backends, stripFlash(model))
+		realModel := stripFlash(model)
+		for _, rule := range s.RoutingRules {
+			if realModel == rule.SourceModel && tokenCount >= rule.Threshold {
+				slog.Info("route override",
+					"from", model,
+					"to", rule.TargetModel,
+					"tokens", tokenCount,
+					"threshold", rule.Threshold)
+				baseURL = resolveBackend(s.Backends, rule.TargetModel)
+				break
+			}
+		}
+	}
 
 	var req struct {
 		Stream bool `json:"stream"`
 	}
 	json.Unmarshal(body, &req) //nolint:errcheck // malformed body → Stream=false is safe
-
-	// Apply routing rules based on token threshold.
-	targetModel := ""
-	realModel := stripFlash(model)
-	for _, rule := range s.RoutingRules {
-		if realModel == rule.SourceModel && tokenCount >= rule.Threshold {
-			slog.Info("route override",
-				"from", model,
-				"to", rule.TargetModel,
-				"tokens", tokenCount,
-				"threshold", rule.Threshold)
-			targetModel = rule.TargetModel
-			break
-		}
-	}
-	if targetModel != "" {
-		baseURL = resolveBackend(s.Backends, targetModel)
-	}
-
-	user := UserFromCtx(r.Context())
-	project := ProjectFromCtx(r.Context())
 
 	if compactLogger == nil {
 		forwardRequest(r.Context(), w, r, baseURL, bodyToForward)
@@ -147,7 +178,7 @@ func (s *Server) forwardWithLogging(
 			toolsHash = compactLogger.StoreTools(toolsBlob)
 		}
 		var err error
-		sessionID, err = compactLogger.StartSession(toolsHash, format, model, user, project, tokenCount)
+		sessionID, err = compactLogger.StartSession(toolsHash, format, model, user, project, provider, tokenCount)
 		if err != nil {
 			slog.Warn("compact logger: start session failed", "err", err)
 		}
@@ -194,22 +225,31 @@ func (s *Server) forwardWithLogging(
 			slog.Warn("compact logger: set session summary failed", "err", err)
 		}
 		if s.MemoryIngestURL != "" {
-			go ingestToMemory(s.MemoryIngestURL, sessionID, obsContent, model, format, user, project, tokenCount)
+			go ingestToMemory(s.MemoryIngestURL, sessionID, obsContent, model, format, user, project, provider, tokenCount)
 		}
 	}
 }
 
 func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body []byte) {
-	model, cleanedBody := extractModel(body)
-	baseURL := resolveBackend(s.Backends, stripFlash(model))
-	bodyToForward := cleanedBody
-	if isFlashModel(model) {
-		bodyToForward = injectDisableThinking(body)
+	provider := ProviderFromCtx(r.Context())
+	var baseURL string
+	var bodyToForward []byte
+	if provider != "" && provider != "local" {
+		p, _ := lookupProvider(s.Providers, provider)
+		baseURL = p.URL
+		bodyToForward = body
+	} else {
+		model, cleanedBody := extractModel(body)
+		baseURL = resolveBackend(s.Backends, stripFlash(model))
+		bodyToForward = cleanedBody
+		if isFlashModel(model) {
+			bodyToForward = injectDisableThinking(body)
+		}
 	}
 	upstream, err := http.NewRequestWithContext(r.Context(), r.Method,
-		baseURL+r.RequestURI, io.NopCloser(bytes.NewReader(bodyToForward)))
+		baseURL+r.URL.RequestURI(), io.NopCloser(bytes.NewReader(bodyToForward)))
 	if err != nil {
-		slog.Error("generic proxy: build upstream request failed", "err", err, "path", r.RequestURI)
+		slog.Error("generic proxy: build upstream request failed", "err", err, "path", r.URL.RequestURI())
 		http.Error(w, "failed to build upstream request", http.StatusInternalServerError)
 		return
 	}
@@ -220,7 +260,7 @@ func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body
 	}
 	resp, err := http.DefaultClient.Do(upstream)
 	if err != nil {
-		slog.Error("generic proxy: upstream request failed", "err", err, "url", baseURL+r.RequestURI)
+		slog.Error("generic proxy: upstream request failed", "err", err, "url", baseURL+r.URL.RequestURI())
 		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}

@@ -31,6 +31,7 @@ func main() {
 
 	s := &proxy.Server{
 		Backends:        cfg.Backends,
+		Providers:       cfg.Providers,
 		RoutingRules:    cfg.RoutingRules,
 		LevelVar:        levelVar,
 		MemoryIngestURL: cfg.MemoryIngestURL,
@@ -88,7 +89,7 @@ func main() {
 
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      proxy.UserProjectMiddleware(mux),
+		Handler:      proxy.AttributionMiddleware(cfg.Providers)(mux),
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 10 * time.Minute,
 		IdleTimeout:  120 * time.Second,

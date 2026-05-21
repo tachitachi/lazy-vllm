@@ -14,9 +14,10 @@ fi
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 
-# Build attributed base URL using the caller's real $USER and $PWD (not the
+# Build attributed base URL using the caller's real $USER, $PWD, and PROVIDER (not the
 # container's ubuntu user or the /workspace mount path).
 LAZY_VLLM_URL="${LAZY_VLLM_URL:-http://localhost:8002}"
+PROVIDER="${PROVIDER:-local}"
 PROJECT=$(echo -n "$(pwd)" | base64 -w 0 | tr '+/' '-_' | tr -d '=')
 
 # Run Claude Code in Docker.
@@ -29,7 +30,7 @@ docker run -it --rm --network host \
     -e HOME=/home/ubuntu \
     -v "$(pwd):/workspace" \
     -v claude-home:/home/ubuntu \
-    -e ANTHROPIC_BASE_URL="$LAZY_VLLM_URL/user/$USER/project/$PROJECT" \
+    -e ANTHROPIC_BASE_URL="$LAZY_VLLM_URL/provider/$PROVIDER/user/$USER/project/$PROJECT" \
     -e ANTHROPIC_API_KEY=dummy \
     -e ANTHROPIC_AUTH_TOKEN=dummy \
     -e ANTHROPIC_DEFAULT_OPUS_MODEL=Qwen3.6-27B-Text-NVFP4-MTP \

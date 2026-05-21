@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func ingestToMemory(baseURL, sessionID, summary, model, format, user, project string, tokenCount int) {
+func ingestToMemory(baseURL, sessionID, summary, model, format, user, project, provider string, tokenCount int) {
 	p := map[string]any{
 		"session_id":    sessionID,
 		"summary":       summary,
@@ -23,6 +23,9 @@ func ingestToMemory(baseURL, sessionID, summary, model, format, user, project st
 	}
 	if project != "" {
 		p["project"] = project
+	}
+	if provider != "" {
+		p["provider"] = provider
 	}
 	payload, _ := json.Marshal(p)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

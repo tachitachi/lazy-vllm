@@ -47,6 +47,13 @@ type Backend struct {
 	CountTokens bool   `json:"count_tokens"`
 }
 
+// Provider maps one PROVIDERS_MAP entry. "local" is a reserved provider name.
+type Provider struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	CountTokens bool   `json:"count_tokens"`
+}
+
 // RouteRule maps one ROUTING_RULES entry.
 type RouteRule struct {
 	SourceModel string `json:"source_model"`
@@ -57,6 +64,7 @@ type RouteRule struct {
 // Config holds the proxy's configuration parsed from environment variables.
 type Config struct {
 	Backends        []Backend
+	Providers       []Provider
 	RoutingRules    []RouteRule
 	Port            int
 	LogDir          string
@@ -83,8 +91,21 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	var providers []Provider
+	if r := EnvOr("PROVIDERS_MAP", ""); r != "" {
+		if err := json.Unmarshal([]byte(r), &providers); err != nil {
+			return nil, fmt.Errorf("invalid PROVIDERS_MAP: %w", err)
+		}
+		for _, p := range providers {
+			if p.Name == "local" {
+				return nil, fmt.Errorf("PROVIDERS_MAP: \"local\" is a reserved provider name")
+			}
+		}
+	}
+
 	return &Config{
 		Backends:        backends,
+		Providers:       providers,
 		RoutingRules:    routingRules,
 		Port:            EnvIntOr("PORT", 8002),
 		LogDir:          EnvOr("LOG_DIR", ""),

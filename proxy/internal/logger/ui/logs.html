@@ -332,9 +332,9 @@ function renderSessionDetail(session, msgs, rawReq) {
   const modelBadge = session.model
     ? `<span class="text-xs text-indigo-300 font-mono">${escHtml(session.model)}</span>`
     : '';
-  const attributionBadge = (session.user || session.project)
+  const attributionBadge = (session.provider || session.user || session.project)
     ? `<span class="text-xs text-teal-400 font-mono" title="${escAttr(session.project || '')}">${
-        [session.user ? escHtml(session.user) : '', session.project ? escHtml(session.project) : ''].filter(Boolean).join(' · ')
+        [session.provider ? escHtml(session.provider) : '', session.user ? escHtml(session.user) : '', session.project ? escHtml(session.project) : ''].filter(Boolean).join(' · ')
       }</span>`
     : '';
   let html = `<div class="mb-6">
@@ -481,9 +481,9 @@ function renderSessionsList(sessions) {
     const summary = s.summary
       ? `<div class="text-xs text-gray-400 truncate mt-0.5" title="${escAttr(s.summary)}">${escHtml(s.summary.slice(0, 120))}</div>`
       : '';
-    const attribution = (s.user || s.project)
-      ? `<div class="text-xs text-teal-600 truncate mt-0.5" title="${escAttr([s.user, s.project].filter(Boolean).join(' · '))}">${
-          [s.user ? escHtml(s.user) : '', s.project ? escHtml(baseName(s.project)) : ''].filter(Boolean).join(' · ')
+    const attribution = (s.provider || s.user || s.project)
+      ? `<div class="text-xs text-teal-600 truncate mt-0.5" title="${escAttr([s.provider, s.user, s.project].filter(Boolean).join(' · '))}">${
+          [s.provider ? escHtml(s.provider) : '', s.user ? escHtml(s.user) : '', s.project ? escHtml(baseName(s.project)) : ''].filter(Boolean).join(' · ')
         }</div>`
       : '';
     return `

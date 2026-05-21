@@ -11,9 +11,30 @@ import (
 // Server holds the state for all HTTP handlers.
 type Server struct {
 	Backends        []config.Backend
+	Providers       []config.Provider
 	RoutingRules    []config.RouteRule
 	LevelVar        *slog.LevelVar
 	MemoryIngestURL string
+}
+
+// lookupProvider returns the Provider for a given name, or false if not found.
+func lookupProvider(providers []config.Provider, name string) (config.Provider, bool) {
+	for _, p := range providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return config.Provider{}, false
+}
+
+// modelFromBody reads the model field from a JSON body without modifying the body.
+func modelFromBody(body []byte) string {
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return ""
+	}
+	m, _ := obj["model"].(string)
+	return m
 }
 
 // resolveBackend returns the upstream URL for a given model name.

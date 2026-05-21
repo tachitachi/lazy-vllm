@@ -225,20 +225,18 @@ services:
       - "8002:8002"
     environment:
       ENABLE_SYSTEM_REMINDER: true
-      # BACKENDS_MAP: >-
-      #   [
-      #     {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},
-      #     {"name":"Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},
-      #     {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000","count_tokens":true},
-      #     {"name":"Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000","count_tokens":true},
-      #     {"name":"sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000","count_tokens":true},
-      #     {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000","count_tokens":true}
-      #   ]
       BACKENDS_MAP: >-
         [
-          {"name":"claude-sonnet-4-6","url":"https://api.anthropic.com","count_tokens":false},
-          {"name":"claude-haiku-4-5-20251001","url":"https://api.anthropic.com","count_tokens":false},
-          {"name":"claude-opus-4-7","url":"https://api.anthropic.com","count_tokens":false}
+          {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},
+          {"name":"Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},
+          {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000","count_tokens":true},
+          {"name":"Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000","count_tokens":true},
+          {"name":"sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000","count_tokens":true},
+          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000","count_tokens":true}
+        ]
+      PROVIDERS_MAP: >-
+        [
+          {"name":"anthropic","url":"https://api.anthropic.com","count_tokens":false}
         ]
       # ROUTING_RULES: >-
       #   [
