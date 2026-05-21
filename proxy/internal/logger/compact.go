@@ -38,6 +38,7 @@ type CompactSession struct {
 	User           *string   `json:"user,omitempty"`
 	Project        *string   `json:"project,omitempty"`
 	Provider       *string   `json:"provider,omitempty"`
+	IsTerminal     bool      `json:"is_terminal"`
 }
 
 // CompactSessionMessage holds a message reference within a session.
@@ -406,7 +407,8 @@ func (c *CompactLogger) GetSession(id string) (*CompactSession, []CompactSession
 // ListSessions returns recent sessions (last n days).
 func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 	latestDuration := `(SELECT sm2.duration_ms FROM session_messages sm2 WHERE sm2.session_id = s.id ORDER BY sm2.sequence DESC LIMIT 1)`
-	query := `SELECT s.id, s.format, s.model, s.token_count, s.tools_hash, s.summary, s.user, s.project, s.provider, s.created_at, COUNT(sm.message_hash),` + latestDuration + `
+	lastMsgBody := `(SELECT m.body FROM session_messages sm3 JOIN messages m ON m.hash = sm3.message_hash WHERE sm3.session_id = s.id ORDER BY sm3.sequence DESC LIMIT 1)`
+	query := `SELECT s.id, s.format, s.model, s.token_count, s.tools_hash, s.summary, s.user, s.project, s.provider, s.created_at, COUNT(sm.message_hash),` + latestDuration + `,` + lastMsgBody + `
 		 FROM sessions s
 		 LEFT JOIN session_messages sm ON sm.session_id = s.id
 		 WHERE s.created_at >= ?
@@ -426,7 +428,8 @@ func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 		var created int64
 		var toolsHashBlob *[]byte
 		var lastDuration *int64
-		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &toolsHashBlob, &s.Summary, &s.User, &s.Project, &s.Provider, &created, &s.MessageCt, &lastDuration); err != nil {
+		var lastBody *[]byte
+		if err := rows.Scan(&s.ID, &s.Format, &s.Model, &s.TokenCount, &toolsHashBlob, &s.Summary, &s.User, &s.Project, &s.Provider, &created, &s.MessageCt, &lastDuration, &lastBody); err != nil {
 			continue
 		}
 		s.CreatedAt = time.UnixMilli(created)
@@ -434,6 +437,16 @@ func (c *CompactLogger) ListSessions(days int) ([]CompactSession, error) {
 		if toolsHashBlob != nil {
 			h := hashHex(*toolsHashBlob)
 			s.ToolsHash = &h
+		}
+		if lastBody != nil {
+			decompressed := decompressData(*lastBody)
+			var lastMsg struct {
+				Role      string            `json:"role"`
+				ToolCalls []json.RawMessage `json:"tool_calls"`
+			}
+			if json.Unmarshal(decompressed, &lastMsg) == nil {
+				s.IsTerminal = lastMsg.Role == "assistant" && len(lastMsg.ToolCalls) == 0
+			}
 		}
 		sessions = append(sessions, s)
 	}

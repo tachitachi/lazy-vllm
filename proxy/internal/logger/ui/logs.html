@@ -80,6 +80,9 @@
 <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
         <input type="checkbox" id="auto-refresh" class="accent-indigo-500"> Auto-refresh
       </label>
+      <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <input type="checkbox" id="hide-intermediate" class="accent-indigo-500"> Hide intermediate
+      </label>
       <button id="refresh-btn" class="text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded border border-gray-600">
         ↻ Refresh
       </button>
@@ -112,6 +115,22 @@
 let selectedId = null;
 let allSessions = [];
 let refreshTimer = null;
+let hideIntermediate = localStorage.getItem('hideIntermediate') === 'true';
+
+function filteredSessions() {
+  if (!hideIntermediate) return allSessions;
+  return allSessions.filter(s => s.is_terminal);
+}
+
+function applyFilter() {
+  const visible = filteredSessions();
+  if (selectedId && !visible.find(s => s.id === selectedId)) {
+    selectedId = null;
+    document.getElementById('detail-panel').innerHTML =
+      '<div class="text-gray-500 text-center mt-32 text-sm">Select an item from the list to inspect it.</div>';
+  }
+  document.getElementById('request-list').innerHTML = renderSessionsList(visible);
+}
 
 // ── Markdown renderer ────────────────────────────────────────
 
@@ -516,7 +535,7 @@ function renderSessionsList(sessions) {
 async function loadSessionsList() {
   try {
     allSessions = await fetchSessionsList();
-    document.getElementById('request-list').innerHTML = renderSessionsList(allSessions);
+    applyFilter();
     setStatus(true);
   } catch (e) {
     setStatus(false);
@@ -525,7 +544,7 @@ async function loadSessionsList() {
 
 async function selectSession(id) {
   selectedId = id;
-  document.getElementById('request-list').innerHTML = renderSessionsList(allSessions);
+  document.getElementById('request-list').innerHTML = renderSessionsList(filteredSessions());
   document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
   try {
     const [data, rawReq] = await Promise.all([
@@ -632,6 +651,13 @@ function baseName(path) {
 // ── Init ─────────────────────────────────────────────────────
 
 document.getElementById('refresh-btn').addEventListener('click', loadSessionsList);
+
+document.getElementById('hide-intermediate').addEventListener('change', function() {
+  hideIntermediate = this.checked;
+  localStorage.setItem('hideIntermediate', String(hideIntermediate));
+  applyFilter();
+});
+document.getElementById('hide-intermediate').checked = hideIntermediate;
 
 setupAutoRefresh();
 setupScrollToTop();

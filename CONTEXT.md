@@ -33,6 +33,14 @@ _Avoid_: fast model, non-thinking model, instant model
 The upstream API service selected for a session — either `"local"` (routes to a BACKENDS_MAP entry by model name) or a named entry from PROVIDERS_MAP (routes to a fixed external URL). Carried in the URL path prefix; stored in the `provider` column of the sessions table.
 _Avoid_: backend, upstream, service
 
+**Terminal session**:
+A session whose final message is an assistant message with no tool calls, indicating the model returned control to the user.
+_Avoid_: complete session, final session, done session
+
+**Intermediate session**:
+A session whose final message contains tool calls, representing a turn in an ongoing agentic loop. Contrast with **terminal session**.
+_Avoid_: incomplete session, in-progress session, non-terminal session
+
 **Backend**:
 A local vLLM server instance, identified by name and URL in `BACKENDS_MAP`. Used only when provider is `"local"`.
 _Avoid_: upstream, server, endpoint
