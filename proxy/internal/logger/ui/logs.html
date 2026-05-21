@@ -83,6 +83,9 @@
       <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
         <input type="checkbox" id="hide-intermediate" class="accent-indigo-500"> Hide intermediate
       </label>
+      <button id="diff-mode-btn" onclick="toggleDiffMode()" class="text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded border border-gray-600">
+        Diff
+      </button>
       <button id="refresh-btn" class="text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded border border-gray-600">
         ↻ Refresh
       </button>
@@ -116,6 +119,11 @@ let selectedId = null;
 let allSessions = [];
 let refreshTimer = null;
 let hideIntermediate = localStorage.getItem('hideIntermediate') === 'true';
+let diffMode = false;
+let diffSlot1 = null;
+let diffSlot2 = null;
+let diffData = {};
+let diffRawMode = false;
 
 function filteredSessions() {
   if (!hideIntermediate) return allSessions;
@@ -124,7 +132,7 @@ function filteredSessions() {
 
 function applyFilter() {
   const visible = filteredSessions();
-  if (selectedId && !visible.find(s => s.id === selectedId)) {
+  if (!diffMode && selectedId && !visible.find(s => s.id === selectedId)) {
     selectedId = null;
     document.getElementById('detail-panel').innerHTML =
       '<div class="text-gray-500 text-center mt-32 text-sm">Select an item from the list to inspect it.</div>';
@@ -485,8 +493,19 @@ function renderSessionsList(sessions) {
     return `<div class="p-4 text-xs text-gray-600 text-center">No sessions yet.</div>`;
   }
   return sessions.map(s => {
-    const isSelected = s.id === selectedId;
-    const sel = isSelected ? 'bg-indigo-900/40 border-indigo-500' : 'border-transparent hover:bg-gray-800/50';
+    let sel = '';
+    if (diffMode) {
+      if (s.id === diffSlot1) {
+        sel = 'bg-indigo-900/40 border-indigo-500';
+      } else if (s.id === diffSlot2) {
+        sel = 'bg-emerald-900/40 border-emerald-500';
+      } else {
+        sel = 'border-transparent hover:bg-gray-800/50';
+      }
+    } else {
+      const isSelected = s.id === selectedId;
+      sel = isSelected ? 'bg-indigo-900/40 border-indigo-500' : 'border-transparent hover:bg-gray-800/50';
+    }
     const fmtClass = s.format === 'anthropic' ? 'text-purple-400' : 'text-cyan-400';
     const toolsBadge = s.tools_hash
       ? `<span class="text-xs text-amber-400">⚙</span>`
@@ -507,7 +526,7 @@ function renderSessionsList(sessions) {
       : '';
     return `
       <div class="px-3 py-2 border-l-2 cursor-pointer ${sel} transition-colors"
-           onclick="selectSession('${escHtml(s.id)}')">
+           onclick="handleSessionClick('${escHtml(s.id)}')">
         <div class="flex items-center justify-between">
           <span class="flex items-center gap-1">
             <span class="text-xs ${fmtClass}">${escHtml(s.format || 'unknown')}</span>
@@ -646,6 +665,280 @@ function baseName(path) {
   if (!path) return '';
   const parts = path.split('/').filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
+}
+
+// ── Diff Mode ──────────────────────────────────────────────
+
+function toggleDiffMode() {
+  if (diffMode) {
+    diffMode = false;
+    diffSlot1 = null;
+    diffSlot2 = null;
+    diffData = {};
+    diffRawMode = false;
+    selectedId = null;
+    updateDiffButton(false);
+    document.getElementById('list-header').textContent = 'Sessions';
+    applyFilter();
+    document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-center mt-32 text-sm">Select an item from the list to inspect it.</div>';
+  } else {
+    diffMode = true;
+    diffSlot1 = null;
+    diffSlot2 = null;
+    diffData = {};
+    diffRawMode = false;
+    selectedId = null;
+    updateDiffButton(true);
+    document.getElementById('list-header').textContent = 'Pick 2 sessions';
+    applyFilter();
+    document.getElementById('detail-panel').innerHTML = '<div class="text-gray-500 text-center mt-32 text-sm">Select two sessions to compare.</div>';
+  }
+}
+
+function updateDiffButton(active) {
+  const btn = document.getElementById('diff-mode-btn');
+  if (active) {
+    btn.classList.add('bg-indigo-900/40', 'border-indigo-500', 'text-indigo-300');
+  } else {
+    btn.classList.remove('bg-indigo-900/40', 'border-indigo-500', 'text-indigo-300');
+  }
+}
+
+function handleSessionClick(id) {
+  if (!diffMode) {
+    selectSession(id);
+    return;
+  }
+  if (id === diffSlot1) {
+    diffSlot1 = null;
+    delete diffData[id];
+  } else if (id === diffSlot2) {
+    diffSlot2 = null;
+    delete diffData[id];
+  } else if (!diffSlot1) {
+    diffSlot1 = id;
+  } else if (!diffSlot2) {
+    diffSlot2 = id;
+  } else {
+    diffSlot2 = id;
+  }
+  applyFilter();
+  renderDiffView();
+}
+
+function toggleDiffRow(rowId) {
+  const el = document.getElementById(`${rowId}-expanded`);
+  if (el) el.classList.toggle('hidden');
+}
+
+function toggleDiffRawMode() {
+  diffRawMode = !diffRawMode;
+  renderDiffView();
+}
+
+function renderDiffMessageBody(msg) {
+  let parsed = null;
+  try { parsed = JSON.parse(msg.body); } catch { parsed = null; }
+  if (!parsed) return '<span class="text-gray-600 text-xs">parse error</span>';
+  if (diffRawMode) {
+    return `<pre class="json-block text-gray-300 bg-gray-950 p-3 rounded overflow-x-auto text-xs">${escHtml(JSON.stringify(parsed, null, 2))}</pre>`;
+  }
+  return renderMessage(parsed);
+}
+
+function renderDiffRows(leftMsgs, rightMsgs) {
+  const maxLen = Math.max(leftMsgs.length, rightMsgs.length);
+  let html = '';
+  for (let i = 0; i < maxLen; i++) {
+    const lm = leftMsgs[i];
+    const rm = rightMsgs[i];
+    const lh = lm ? lm.message_hash : null;
+    const rh = rm ? rm.message_hash : null;
+    const both = lh && rh;
+    const same = both && lh === rh;
+
+    let statusHtml = '';
+    if (same) {
+      statusHtml = '<span class="text-green-400">&#10003;</span> <span class="text-xs text-green-400">same</span>';
+    } else if (both) {
+      statusHtml = '<span class="text-red-400">&#10007;</span> <span class="text-xs text-red-400">hashes differ</span>';
+    } else if (lh) {
+      statusHtml = '<span class="text-gray-500">&#8212;</span> <span class="text-xs text-gray-500">only left</span>';
+    } else {
+      statusHtml = '<span class="text-gray-500">&#8212;</span> <span class="text-xs text-gray-500">only right</span>';
+    }
+
+    const rowId = 'dr-' + i;
+    const leftHash = lm ? escHtml(lh.slice(0, 12)) + '&#8230;' : '<span class="text-xs text-gray-600">&#8212;</span>';
+    const rightHash = rm ? escHtml(rh.slice(0, 12)) + '&#8230;' : '<span class="text-xs text-gray-600">&#8212;</span>';
+    const leftTime = lm ? fmtTime(lm.created_at) : '';
+    const rightTime = rm ? fmtTime(rm.created_at) : '';
+
+    html += `
+    <div class="bg-gray-800/60 rounded border border-gray-700">
+      <div class="grid grid-cols-2 cursor-pointer" onclick="toggleDiffRow('${rowId}')">
+        <div class="px-3 py-2 border-r border-gray-700">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-gray-400">#${i+1}</span>
+            ${leftHash}
+            ${lm ? `<span class="text-xs text-gray-600 ml-auto">${leftTime}</span>` : ''}
+          </div>
+        </div>
+        <div class="px-3 py-2">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-gray-400">#${i+1}</span>
+            ${rightHash}
+            ${rm ? `<span class="text-xs text-gray-600 ml-auto">${rightTime}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="px-3 py-1 text-xs text-center bg-gray-900/40 border-y border-gray-800">
+        ${statusHtml}
+      </div>
+      <div class="grid grid-cols-2 hidden" id="${rowId}-expanded">
+        <div class="px-3 pb-3 pt-2 border-r border-gray-700">
+          ${lm ? renderDiffMessageBody(lm) : '<span class="text-xs text-gray-600">&#8212;</span>'}
+        </div>
+        <div class="px-3 pb-3 pt-2">
+          ${rm ? renderDiffMessageBody(rm) : '<span class="text-xs text-gray-600">&#8212;</span>'}
+        </div>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function renderPartialDiff(leftData) {
+  const leftSession = leftData.session;
+  const leftMsgs = leftData.messages || [];
+  const panel = document.getElementById('detail-panel');
+  const rawModeCls = diffRawMode
+    ? 'bg-indigo-900/40 border-indigo-500 text-indigo-300'
+    : 'bg-gray-800 border-gray-600 text-gray-400';
+  panel.innerHTML = `
+    <div class="mb-4">
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-mono px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-300 border border-indigo-500">
+          ${escHtml(leftSession.id.slice(0, 12))}&#8230;
+        </span>
+        <span class="text-xs text-gray-500">vs</span>
+        <span class="text-xs text-gray-600 italic">Select a second session</span>
+        <button onclick="toggleDiffRawMode()" class="text-xs px-2 py-0.5 rounded border ${rawModeCls}">
+          ${diffRawMode ? 'Raw JSON' : 'Rendered'}
+        </button>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <div class="text-xs font-semibold text-indigo-400 mb-2">Session A (older) · ${leftMsgs.length} msgs</div>
+        <div class="space-y-2">${renderDiffRows(leftMsgs, [])}</div>
+      </div>
+      <div>
+        <div class="text-xs font-semibold text-gray-600 mb-2">Session B (newer)</div>
+        <div class="text-gray-600 text-xs italic text-center mt-8">&larr; Select a second session</div>
+      </div>
+    </div>`;
+}
+
+function renderFullDiff(leftData, rightData) {
+  const leftSession = leftData.session;
+  const rightSession = rightData.session;
+  const leftMsgs = leftData.messages || [];
+  const rightMsgs = rightData.messages || [];
+  const panel = document.getElementById('detail-panel');
+
+  const maxLen = Math.max(leftMsgs.length, rightMsgs.length);
+  let sameCt = 0, diffCt = 0, onlyL = 0, onlyR = 0;
+  for (let i = 0; i < maxLen; i++) {
+    const lh = leftMsgs[i] ? leftMsgs[i].message_hash : null;
+    const rh = rightMsgs[i] ? rightMsgs[i].message_hash : null;
+    if (lh && rh && lh === rh) sameCt++;
+    else if (lh && rh) diffCt++;
+    else if (lh) onlyL++;
+    else onlyR++;
+  }
+
+  const lth = leftSession.tools_hash || 'none';
+  const rth = rightSession.tools_hash || 'none';
+  const toolsSame = lth === rth;
+
+  let stats = `${maxLen} message(s) · ${sameCt} same, ${diffCt} different`;
+  if (onlyL > 0) stats += `, ${onlyL} only left`;
+  if (onlyR > 0) stats += `, ${onlyR} only right`;
+
+  const rawModeCls = diffRawMode
+    ? 'bg-indigo-900/40 border-indigo-500 text-indigo-300'
+    : 'bg-gray-800 border-gray-600 text-gray-400';
+  let html = `
+  <div class="mb-4">
+    <div class="flex items-center gap-2 mb-1 flex-wrap">
+      <span class="text-xs font-mono px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-300 border border-indigo-500">
+        ${escHtml(leftSession.id.slice(0, 12))}&#8230; · ${fmtDate(leftSession.created_at)}
+      </span>
+      <span class="text-xs text-gray-500">vs</span>
+      <span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-300 border border-emerald-500">
+        ${escHtml(rightSession.id.slice(0, 12))}&#8230; · ${fmtDate(rightSession.created_at)}
+      </span>
+      <button onclick="toggleDiffRawMode()" class="text-xs px-2 py-0.5 rounded border ${rawModeCls}">
+        ${diffRawMode ? 'Raw JSON' : 'Rendered'}
+      </button>
+    </div>
+    <div class="text-xs text-gray-400">${stats}</div>
+    <div class="text-xs mt-1 ${toolsSame ? 'text-gray-500' : 'text-amber-400'}">
+      Tools: ${toolsSame ? `SAME (${escHtml(lth.slice(0, 12))}&#8230;)` : `DIFFERENT (${escHtml(lth.slice(0, 12))}&#8230; vs ${escHtml(rth.slice(0, 12))}&#8230;)`}
+    </div>
+  </div>`;
+
+  html += `<div class="space-y-2">${renderDiffRows(leftMsgs, rightMsgs)}</div>`;
+  panel.innerHTML = html;
+}
+
+async function renderDiffView() {
+  const panel = document.getElementById('detail-panel');
+
+  if (!diffSlot1 && !diffSlot2) {
+    panel.innerHTML = '<div class="text-gray-500 text-center mt-32 text-sm">Select two sessions to compare.</div>';
+    return;
+  }
+
+  if (diffSlot1 && !diffData[diffSlot1]) {
+    panel.innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
+    try {
+      diffData[diffSlot1] = await fetchSessionDetail(diffSlot1);
+    } catch(e) {
+      console.error(e);
+      return;
+    }
+  }
+
+  if (diffSlot2 && !diffData[diffSlot2]) {
+    try {
+      diffData[diffSlot2] = await fetchSessionDetail(diffSlot2);
+    } catch(e) {
+      console.error(e);
+      return;
+    }
+  }
+
+  if (diffSlot1 && !diffSlot2) {
+    renderPartialDiff(diffData[diffSlot1]);
+    return;
+  }
+
+  if (diffSlot1 && diffSlot2 && diffData[diffSlot1] && diffData[diffSlot2]) {
+    const s1 = allSessions.find(s => s.id === diffSlot1);
+    const s2 = allSessions.find(s => s.id === diffSlot2);
+    const t1 = new Date(s1.created_at).getTime();
+    const t2 = new Date(s2.created_at).getTime();
+    if (t1 <= t2) {
+      renderFullDiff(diffData[diffSlot1], diffData[diffSlot2]);
+    } else {
+      renderFullDiff(diffData[diffSlot2], diffData[diffSlot1]);
+    }
+    return;
+  }
+
+  panel.innerHTML = '<div class="text-gray-500 text-sm text-center mt-32">Loading…</div>';
 }
 
 // ── Init ─────────────────────────────────────────────────────
