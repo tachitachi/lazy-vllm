@@ -136,13 +136,24 @@ func (s *Server) forwardWithLogging(
 			bodyToForward = body
 		}
 	} else {
-		// Local: apply FLASH and routing rules
-		if isFlash {
+		// Local: apply FLASH, thinking budget, and routing rules
+		budget, disableThinking := computeThinkingBudget(body, s.ThinkingBudgetFraction)
+		effectiveFlash := isFlash || disableThinking
+
+		if effectiveFlash {
 			bodyToForward = injectDisableThinking(body)
 		} else if compactLogger != nil && !isProbeRequest(body) {
 			bodyToForward = injectObsInstruction(body, format)
 		} else {
 			bodyToForward = body
+		}
+
+		if !effectiveFlash {
+			if injected, err := injectThinkingTokenBudget(bodyToForward, budget); err == nil {
+				bodyToForward = injected
+			} else {
+				slog.Warn("failed to inject thinking token budget", "err", err)
+			}
 		}
 		baseURL = resolveBackend(s.Backends, stripFlash(model))
 		realModel := stripFlash(model)

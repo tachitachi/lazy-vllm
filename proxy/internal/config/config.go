@@ -26,6 +26,16 @@ func EnvIntOr(key string, fallback int) int {
 	return fallback
 }
 
+// EnvFloatOr returns the float64 value of the named env var, or fallback if empty/invalid.
+func EnvFloatOr(key string, fallback float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return fallback
+}
+
 // ParseLogLevel returns the slog.Level for a log level string.
 func ParseLogLevel(s string) slog.Level {
 	switch s {

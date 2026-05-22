@@ -24,17 +24,19 @@ func main() {
 		slog.Error("config", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("loaded backends", "backends", len(cfg.Backends), "rules", len(cfg.RoutingRules))
+	thinkingBudget := config.EnvFloatOr("THINKING_BUDGET", 0.9)
+	slog.Info("loaded backends", "backends", len(cfg.Backends), "rules", len(cfg.RoutingRules), "thinking_budget", thinkingBudget)
 
 	levelVar := &slog.LevelVar{}
 	levelVar.Set(config.ParseLogLevel(config.EnvOr("LOG_LEVEL", "INFO")))
 
 	s := &proxy.Server{
-		Backends:        cfg.Backends,
-		Providers:       cfg.Providers,
-		RoutingRules:    cfg.RoutingRules,
-		LevelVar:        levelVar,
-		MemoryIngestURL: cfg.MemoryIngestURL,
+		Backends:               cfg.Backends,
+		Providers:              cfg.Providers,
+		RoutingRules:           cfg.RoutingRules,
+		LevelVar:               levelVar,
+		MemoryIngestURL:        cfg.MemoryIngestURL,
+		ThinkingBudgetFraction: thinkingBudget,
 	}
 
 	var compactLogger *logger.CompactLogger

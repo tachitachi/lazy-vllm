@@ -224,6 +224,7 @@ services:
     ports:
       - "8002:8002"
     environment:
+      THINKING_BUDGET: 0.5
       ENABLE_SYSTEM_REMINDER: true
       BACKENDS_MAP: >-
         [

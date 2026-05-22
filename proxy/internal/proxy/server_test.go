@@ -362,3 +362,209 @@ func TestInjectFlashModels(t *testing.T) {
 		}
 	}
 }
+
+// --- effortTokenBudget ---
+
+func TestEffortTokenBudget(t *testing.T) {
+	tests := []struct {
+		effort      string
+		wantTokens  int
+		wantDisable bool
+	}{
+		{"none", 0, true},
+		{"NONE", 0, true},
+		{"minimal", 128, false},
+		{"low", 256, false},
+		{"medium", 1024, false},
+		{"high", 4096, false},
+		{"xhigh", 8192, false},
+		{"max", 32000, false},
+		{"MAX", 32000, false},
+		{"", 32000, false},
+		{"unknown", 32000, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.effort, func(t *testing.T) {
+			tokens, disable := effortTokenBudget(tt.effort)
+			if tokens != tt.wantTokens || disable != tt.wantDisable {
+				t.Errorf("effortTokenBudget(%q) = (%d, %v), want (%d, %v)",
+					tt.effort, tokens, disable, tt.wantTokens, tt.wantDisable)
+			}
+		})
+	}
+}
+
+// --- extractEffort ---
+
+func TestExtractEffort_OpenAI(t *testing.T) {
+	body := []byte(`{"model":"test","reasoning_effort":"high","messages":[]}`)
+	got := extractEffort(body)
+	if got != "high" {
+		t.Errorf("extractEffort = %q, want high", got)
+	}
+}
+
+func TestExtractEffort_Anthropic(t *testing.T) {
+	body := []byte(`{"model":"test","output_config":{"effort":"medium"},"messages":[]}`)
+	got := extractEffort(body)
+	if got != "medium" {
+		t.Errorf("extractEffort = %q, want medium", got)
+	}
+}
+
+func TestExtractEffort_OpenAITakesPrecedence(t *testing.T) {
+	body := []byte(`{"reasoning_effort":"high","output_config":{"effort":"low"}}`)
+	got := extractEffort(body)
+	if got != "high" {
+		t.Errorf("extractEffort = %q, want high (openai takes precedence)", got)
+	}
+}
+
+func TestExtractEffort_Missing(t *testing.T) {
+	body := []byte(`{"model":"test","messages":[]}`)
+	got := extractEffort(body)
+	if got != "" {
+		t.Errorf("extractEffort = %q, want empty", got)
+	}
+}
+
+func TestExtractEffort_InvalidJSON(t *testing.T) {
+	got := extractEffort([]byte("not json"))
+	if got != "" {
+		t.Errorf("extractEffort(invalid) = %q, want empty", got)
+	}
+}
+
+// --- extractMaxTokens ---
+
+func TestExtractMaxTokens_Present(t *testing.T) {
+	body := []byte(`{"max_tokens":16000,"messages":[]}`)
+	got := extractMaxTokens(body, 32000)
+	if got != 16000 {
+		t.Errorf("extractMaxTokens = %d, want 16000", got)
+	}
+}
+
+func TestExtractMaxTokens_Missing(t *testing.T) {
+	body := []byte(`{"messages":[]}`)
+	got := extractMaxTokens(body, 32000)
+	if got != 32000 {
+		t.Errorf("extractMaxTokens(missing) = %d, want 32000", got)
+	}
+}
+
+func TestExtractMaxTokens_Zero(t *testing.T) {
+	body := []byte(`{"max_tokens":0}`)
+	got := extractMaxTokens(body, 32000)
+	if got != 32000 {
+		t.Errorf("extractMaxTokens(0) = %d, want 32000 (default)", got)
+	}
+}
+
+// --- computeThinkingBudget ---
+
+func TestComputeThinkingBudget_EffortNone_DisablesThinking(t *testing.T) {
+	body := []byte(`{"max_tokens":32000,"reasoning_effort":"none"}`)
+	budget, disable := computeThinkingBudget(body, 0.9)
+	if !disable {
+		t.Error("expected disable=true for effort=none")
+	}
+	if budget != 0 {
+		t.Errorf("budget = %d, want 0", budget)
+	}
+}
+
+func TestComputeThinkingBudget_EffortHigh_CapByFraction(t *testing.T) {
+	// max_tokens=32000, fraction=0.5 → cap=16000; effort=high → 4096
+	// min(4096, 16000) = 4096
+	body := []byte(`{"max_tokens":32000,"reasoning_effort":"high"}`)
+	budget, disable := computeThinkingBudget(body, 0.5)
+	if disable {
+		t.Error("expected disable=false")
+	}
+	if budget != 4096 {
+		t.Errorf("budget = %d, want 4096", budget)
+	}
+}
+
+func TestComputeThinkingBudget_FractionCapSmaller(t *testing.T) {
+	// max_tokens=1000, fraction=0.9 → cap=900; effort missing → 32000
+	// min(32000, 900) = 900
+	body := []byte(`{"max_tokens":1000}`)
+	budget, disable := computeThinkingBudget(body, 0.9)
+	if disable {
+		t.Error("expected disable=false")
+	}
+	if budget != 900 {
+		t.Errorf("budget = %d, want 900", budget)
+	}
+}
+
+func TestComputeThinkingBudget_NoMaxTokens_UsesDefault(t *testing.T) {
+	// no max_tokens → default 32000; fraction=0.9 → cap=28800; effort=high → 4096
+	body := []byte(`{"reasoning_effort":"high"}`)
+	budget, disable := computeThinkingBudget(body, 0.9)
+	if disable {
+		t.Error("expected disable=false")
+	}
+	if budget != 4096 {
+		t.Errorf("budget = %d, want 4096", budget)
+	}
+}
+
+func TestComputeThinkingBudget_AnthropicEffort(t *testing.T) {
+	body := []byte(`{"max_tokens":32000,"output_config":{"effort":"xhigh"}}`)
+	budget, disable := computeThinkingBudget(body, 0.9)
+	if disable {
+		t.Error("expected disable=false")
+	}
+	if budget != 8192 {
+		t.Errorf("budget = %d, want 8192", budget)
+	}
+}
+
+// --- injectThinkingTokenBudget ---
+
+func TestInjectThinkingTokenBudget_AddsField(t *testing.T) {
+	body := []byte(`{"model":"test","messages":[]}`)
+	result, err := injectThinkingTokenBudget(body, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(result, &obj); err != nil {
+		t.Fatal(err)
+	}
+	budget, ok := obj["thinking_token_budget"].(float64)
+	if !ok {
+		t.Fatal("thinking_token_budget missing or wrong type")
+	}
+	if int(budget) != 4096 {
+		t.Errorf("thinking_token_budget = %d, want 4096", int(budget))
+	}
+}
+
+func TestInjectThinkingTokenBudget_PreservesFields(t *testing.T) {
+	body := []byte(`{"model":"test","max_tokens":8192,"messages":[]}`)
+	result, err := injectThinkingTokenBudget(body, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(result, &obj); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := obj["model"]; !ok {
+		t.Error("model field should be preserved")
+	}
+	if maxTok, ok := obj["max_tokens"].(float64); !ok || int(maxTok) != 8192 {
+		t.Error("max_tokens field should be preserved")
+	}
+}
+
+func TestInjectThinkingTokenBudget_InvalidJSON_ReturnsError(t *testing.T) {
+	_, err := injectThinkingTokenBudget([]byte("not json"), 1024)
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
