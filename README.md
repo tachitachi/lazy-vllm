@@ -15,18 +15,19 @@ A local LLM infrastructure stack built around Qwen models — routing proxy, obs
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌──────────────────────────────────┐
-│  Open-WebUI │───▶│  Proxy (Go)  │───▶│  vLLM: Qwen3.6-27B (reasoning)  │
-│             │    │  :8002       │    │  vLLM: Qwen3.6-35B-A4B (flash)   │
-│  Client     │────▶│  Agent Graph │───▶│  vLLM: Qwen3.6-35B-A4B (1M ctx) │
+│  Open-WebUI │───▶│  Proxy (Go)  │───▶│  vLLM: Qwen3.6-35B-A4B (flash)   │
+│             │    │  :8002       │    │  vLLM: Qwen3.6-35B-A4B (1M ctx)  │
+│  Client     │────▶│  Agent Graph │───▶│  vLLM: Qwen3.6-27B               │
 └─────────────┘    └──────┬───────┘    └──────────────────────────────────┘
-                           │ extract obs
-                    ┌──────▼───────┐    ┌──────────────┐
-                    │  SQLite      │    │  Memory      │
-                    │  (sessions)  │    │  Service     │◀── Claude Code
-                    └──────────────┘    │  :8020       │    (MCP SSE)
-                                        │  ChromaDB    │
-                    ┌──────────────┐    │  embeddings  │
-                    │  Prometheus  │◀───┘──────────────┘
+                           │ route over Tailscale        ▲
+                           │              ┌───────────────┴──┐
+                    ┌──────▼───────┐       │  fast-qwen      │       ┌──────────────────────┐
+                    │  SQLite      │       │  vLLM (bare     │◀──────│  Windows Host        │
+                    │  (sessions)  │       │  metal)          │       │  RTX 5090            │
+                    └──────────────┘       │  Qwen3.6-27B     │       │  Qwen3.6-27B-Text    │
+                           │                │  :8000           │       │  (NVFP4-MTP)         │
+                    ┌──────────────┐       └──────────────────┘       └──────────────────────┘
+                    │  Prometheus  │
                     │  Grafana     │
                     └─────────────┘
 ```
@@ -40,14 +41,43 @@ A local LLM infrastructure stack built around Qwen models — routing proxy, obs
 | **Memory** | 8020 | Semantic memory: ChromaDB embeddings + MCP SSE server for `search_memories` |
 | **Open-WebUI** | 3000 | Chat interface |
 | **Grafana** | 3001 | Observability dashboards |
+| **fast-qwen** | 8000 | Remote Qwen3.6-27B on Windows/5090 (Tailscale) |
 | **Prometheus** | 9090 | Metrics collection |
 | **claude-local** | — | Claude Code in Docker, pointed at local models |
+
+## Remote Fast Model (fast-qwen)
+
+A separate Windows host running a RTX 5090 serves Qwen3.6-27B bare-metal via `vllm-windows`. It joins the stack over Tailscale as `fast-qwen`, letting the proxy route requests to it like any local backend.
+
+### Setup (Windows host)
+
+```bash
+# Install vllm-windows per https://github.com/SystemPanic/vllm-windows
+# Then run:
+./run-vllm-windows.sh
+```
+
+### Setup (compose host)
+
+```bash
+export FAST_QWEN_HOST=<tailscale-hostname-of-5090-machine>
+./scripts/docker-compose.sh up -d
+```
+
+The wrapper resolves `FAST_QWEN_HOST`'s Tailscale IP via `tailscale ip --4=true` (or `dig`), exports `FAST_QWEN_IP`, and passes it through `extra_hosts` so the proxy and Prometheus can reach `fast-qwen:8000`. The actual hostname never appears in the compose file.
+
+### Future
+
+Dynamic routing will fall through to slower local backends when `fast-qwen` is saturated, letting the faster host handle latency-sensitive requests while the slower host absorbs concurrency spikes.
 
 ## Quick Start
 
 ```bash
+# Set the Tailscale hostname of your fast-qwen node
+export FAST_QWEN_HOST=<tailscale-hostname>
+
 # Start everything
-docker compose up -d
+./scripts/docker-compose.sh up -d
 
 # Run Claude Code locally
 claude-local "explain this codebase"
@@ -68,6 +98,12 @@ The proxy (`proxy/`) sits in front of one or more vLLM backends and provides:
 export BACKENDS_MAP='[{"name":"qwen-35b-flash","url":"http://vllm-flash:8000"},{"name":"qwen-27b","url":"http://vllm-reasoning:8000"}]'
 export ROUTING_RULES='[{"source_model":"qwen-35b-flash","threshold":32000,"target_model":"qwen-27b"}]'
 ```
+
+The proxy is configured to route to `fast-qwen` (Qwen3.6-27B on a remote Windows/5090 node) by default. The `BACKENDS_MAP` env var in `docker-compose.yml` maps model names to backend URLs.
+
+### Future: Load Balancing
+
+The current setup routes to `fast-qwen` for low-latency inference. Future routing rules will fall through to slower local backends when `fast-qwen` is saturated, letting the faster host handle latency-sensitive requests while the slower host absorbs concurrency spikes.
 
 See [proxy/README.md](proxy/README.md) for full details.
 
@@ -148,7 +184,9 @@ See [memory/README.md](memory/README.md) for full architecture details.
 ├── Dockerfile.claude          # Claude Code container
 ├── Dockerfile.opencode        # Opencode service
 ├── .mcp.json                  # MCP server registration for Claude Code
+├── run-vllm-windows.sh        # Bare-metal vLLM launcher (Windows/5090 host)
 ├── scripts/                   # Install, uninstall, entrypoint scripts
+├── scripts/docker-compose.sh  # Tailscale IP resolver for fast-qwen
 ├── proxy/                     # Routing proxy (Go) — flash, logging, token routing
 ├── memory/                    # Semantic memory service (Python) — ChromaDB + MCP
 ├── agent/                     # Agent Graph Framework (Go)
@@ -225,9 +263,12 @@ git clone <repository-url>
 cd lazy-vllm
 
 export OPENCODE_SERVER_PASSWORD=your_password
+export FAST_QWEN_HOST=<tailscale-hostname-of-5090-machine>
 
-docker compose up -d
+./scripts/docker-compose.sh up -d
 ```
+
+The `docker-compose.sh` wrapper resolves `FAST_QWEN_HOST`'s Tailscale IP and injects it into the stack. Without it, the fast-qwen backend will not be reachable.
 
 ### Accessing the Services
 
