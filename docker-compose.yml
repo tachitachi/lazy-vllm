@@ -1,9 +1,9 @@
 services:
   gemma4:
-    # image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
-    build:
-      context: .
-      dockerfile: Dockerfile.gemma4
+    image: vllm/vllm-openai:nightly-22a58640b4563f5945aa2052e9e61d425351588d
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.gemma4
     ports:
       - "8001:8000"
     ipc: host
@@ -27,10 +27,7 @@ services:
     restart: always
     command:
       - --model=RedHatAI/gemma-4-26B-A4B-it-NVFP4
-      - --served-model-name
-      - google/gemma-4-26B-A4B-it
-      - RedHatAI/gemma-4-26B-A4B-it-NVFP4
-      - gemma-4-26B-A4B-it
+      - --served-model-name=gemma-4-26B-A4B-it
       - --max-model-len=262144
       - --gpu-memory-utilization=0.40
       # - --quantization=fp8
@@ -47,14 +44,11 @@ services:
       - --max-num-seqs=64
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"enable_thinking": true}'
-      # - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 6}'
+      - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 3}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
     profiles:
       - gemma4
-    depends_on:
-      qwen36:
-        condition: service_healthy
 
   qwen36:
     image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
@@ -181,9 +175,7 @@ services:
     restart: always
     command:
       - --model=sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
-      - --served-model-name
-      - sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
-      - Qwen3.6-27B-Text-NVFP4-MTP
+      - --served-model-name=Qwen3.6-27B-Text-NVFP4-MTP
       - --max-model-len=262144
       - --gpu-memory-utilization=0.40
       - --kv-cache-dtype=fp8
@@ -203,6 +195,61 @@ services:
       - --language-model-only
     profiles:
       - qwen36-27b
+
+  # qwen36-llama-cpp:
+  #   image: ghcr.io/ggml-org/llama.cpp:full-cuda13
+  #   ports:
+  #     - "8001:8080"
+  #   ipc: host
+  #   shm_size: '16g'
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 600s
+  #   volumes:
+  #     - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+  #     - ${HOME}/.cache/llama:/root/.cache/llama
+  #     # - ${HOME}/.cache/huggingface/hub/models--google--gemma-4-26B-A4B-it/snapshots/4c55b528bdc40b4e79ed7fd4e2f8e46fa5aaed5a/chat_template.jinja:/vllm-workspace/examples/tool_chat_template_gemma4.jinja
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #   restart: always
+  #   command:
+  #     - --server
+  #     - --model
+  #     - /root/.cache/llama/models--sakamakismile--Qwen3.6-27B-Text-NVFP4-MTP.gguf
+  #     - --spec-type
+  #     - draft-mtp
+  #     - --spec-draft-n-max
+  #     - "3"
+  #     - --cache-type-k
+  #     - q8_0
+  #     - --cache-type-v
+  #     - q8_0
+  #     - --parallel
+  #     - "4"
+  #     - -c
+  #     - "524288"
+  #     - --n-gpu-layers
+  #     - "99"
+  #     - --flash-attn
+  #     - on
+  #     - --host
+  #     - 0.0.0.0
+  #     - --port
+  #     - "8080"
+  #     - --kv-unified
+  #     - --metrics
+  #     - --ubatch-size
+  #     - "2048"
+  #   profiles:
+  #     - qwen36-llama
 
   # thinking-router:
   #   build:
@@ -228,12 +275,7 @@ services:
       ENABLE_SYSTEM_REMINDER: true
       BACKENDS_MAP: >-
         [
-          {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},
-          {"name":"Qwen3.6-35B-A3B-NVFP4-1M","url":"http://qwen36-1m:8000","count_tokens":true},
-          {"name":"RedHatAI/Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000","count_tokens":true},
-          {"name":"Qwen3.6-35B-A3B-NVFP4","url":"http://qwen36:8000","count_tokens":true},
-          {"name":"sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000","count_tokens":true},
-          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://qwen36-27b:8000","count_tokens":true}
+          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://fast-qwen:8000","count_tokens":true}
         ]
       PROVIDERS_MAP: >-
         [
@@ -352,6 +394,7 @@ services:
       - "9090:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "fast-qwen:${FAST_QWEN_IP}"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
