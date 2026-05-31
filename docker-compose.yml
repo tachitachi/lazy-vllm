@@ -270,6 +270,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8002:8002"
+    extra_hosts:
+      - "fast-qwen:${FAST_QWEN_IP}"
     environment:
       THINKING_BUDGET: 0.5
       ENABLE_SYSTEM_REMINDER: true
