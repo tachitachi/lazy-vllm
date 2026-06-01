@@ -175,7 +175,7 @@ services:
     restart: always
     command:
       - --model=sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP
-      - --served-model-name=Qwen3.6-27B-Text-NVFP4-MTP
+      - --served-model-name=Qwen3.6-27B-Text-NVFP4-MTP-OVERFLOW
       - --max-model-len=262144
       - --gpu-memory-utilization=0.40
       - --kv-cache-dtype=fp8
@@ -187,7 +187,7 @@ services:
       - --tool-call-parser=qwen3_coder
       - --enable-prefix-caching
       - --enable-chunked-prefill
-      - --max-num-seqs=16
+      - --max-num-seqs=64
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"preserve_thinking": true, "enable_thinking": true}'
       - '--speculative-config={"method":"mtp","num_speculative_tokens":3}'
