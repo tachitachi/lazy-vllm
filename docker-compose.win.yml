@@ -3,6 +3,13 @@ services:
   # by prometheus-community/windows_exporter running as a native Windows service.
   # See scripts/install-windows-exporter.ps1 for installation instructions.
   #
+  # NOTE: coretemp-exporter (CPU temperature) is likewise NOT a container. It
+  # reads Core Temp's Windows host shared memory (CoreTempMappingObjectEx), which
+  # a Linux container cannot access, so it runs natively on the host on :9184.
+  # Build:  cd coretemp-exporter && GOOS=windows GOARCH=amd64 go build .
+  # Run:    coretemp-exporter.exe --listen :9184   (with Core Temp running)
+  # See coretemp-exporter/README.md for service/firewall setup.
+  #
   nvidia-gpu-exporter:
     image: utkuozdemir/nvidia_gpu_exporter:1.4.1
     ports:

@@ -25,6 +25,18 @@ scrape_configs:
         labels:
           host: fast-qwen
 
+  - job_name: hwmon
+    static_configs:
+      - targets: ['fast-qwen:4445']
+        labels:
+          host: fast-qwen
+
+  - job_name: coretemp
+    static_configs:
+      - targets: ['fast-qwen:9184']
+        labels:
+          host: fast-qwen
+
   - job_name: cadvisor
     static_configs:
       - targets: ['cadvisor:8080']

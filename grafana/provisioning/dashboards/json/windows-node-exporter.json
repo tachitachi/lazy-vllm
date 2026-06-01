@@ -831,6 +831,954 @@
       },
       "id": 14,
       "panels": [],
+      "title": "Temperature & Cooling",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 105,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 11
+      },
+      "id": 15,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "max(coretemp_core_temperature_celsius{instance=~\"$coretemp_instance\"})",
+          "range": true,
+          "instant": false,
+          "refId": "M",
+          "legendFormat": "hottest core"
+        }
+      ],
+      "title": "CPU Temperature",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 110,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 11
+      },
+      "id": 16,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "max(ohm_gpunvidia_celsius{instance=~\"$ohm_instance\",sensor=\"GPU Core\"})",
+          "range": true,
+          "instant": false,
+          "refId": "N",
+          "legendFormat": "gpu"
+        }
+      ],
+      "title": "Hottest GPU Core",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 90,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 75
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 11
+      },
+      "id": 17,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_hdd_celsius{instance=~\"$ohm_instance\",sensor=\"Composite Temperature\"}",
+          "range": true,
+          "instant": false,
+          "refId": "O",
+          "legendFormat": "{{hardware}}"
+        }
+      ],
+      "title": "SSD Temperature",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "coretemp_core_temperature_celsius{instance=~\"$coretemp_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "P",
+          "legendFormat": "CPU core {{core}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_gpunvidia_celsius{instance=~\"$ohm_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "Q",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_gpuati_celsius{instance=~\"$ohm_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "R",
+          "legendFormat": "iGPU {{sensor}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_hdd_celsius{instance=~\"$ohm_instance\",sensor!~\".*(Critical|Warning).*\"}",
+          "range": true,
+          "instant": false,
+          "refId": "S",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        }
+      ],
+      "title": "All Temperatures",
+      "type": "timeseries",
+      "description": "All live hardware temperature sensors. SSD Critical/Warning threshold constants are excluded."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 17
+      },
+      "id": 19,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "coretemp_core_temperature_celsius{instance=~\"$coretemp_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "T",
+          "legendFormat": "core {{core}}"
+        }
+      ],
+      "title": "CPU Temperature",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 17
+      },
+      "id": 20,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_gpunvidia_celsius{instance=~\"$ohm_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "U",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_gpuati_celsius{instance=~\"$ohm_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "V",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        }
+      ],
+      "title": "GPU Temperatures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 17
+      },
+      "id": 21,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_hdd_celsius{instance=~\"$ohm_instance\",sensor!~\".*(Critical|Warning).*\"}",
+          "range": true,
+          "instant": false,
+          "refId": "W",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        }
+      ],
+      "title": "Storage Temperature",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "rotrpm"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 24
+      },
+      "id": 22,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_gpunvidia_revolutions_per_minute{instance=~\"$ohm_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "X",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        }
+      ],
+      "title": "GPU Fan Speed",
+      "type": "timeseries",
+      "description": "0 RPM is normal idle behaviour for GPUs with zero-RPM fan modes."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 24
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "ohm_gpunvidia_control_percent{instance=~\"$ohm_instance\",sensor=~\".*Fan.*\"}",
+          "range": true,
+          "instant": false,
+          "refId": "Y",
+          "legendFormat": "{{hardware}} {{sensor}}"
+        }
+      ],
+      "title": "GPU Fan Control",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prometheus}"
+          },
+          "editorMode": "code",
+          "expr": "coretemp_power_watts{instance=~\"$coretemp_instance\"}",
+          "range": true,
+          "instant": false,
+          "refId": "Z",
+          "legendFormat": "cpu {{cpu}}"
+        }
+      ],
+      "title": "CPU Package Power",
+      "type": "timeseries",
+      "description": "CPU package power draw reported by Core Temp (struct version 2+)."
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 25,
+      "panels": [],
       "title": "CPU",
       "type": "row"
     },
@@ -896,9 +1844,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 31
       },
-      "id": 15,
+      "id": 26,
       "options": {
         "legend": {
           "calcs": [
@@ -925,7 +1873,7 @@
           "expr": "avg by (mode) (rate(windows_cpu_time_total{instance=~\"$instance\"}[$__rate_interval])) * 100",
           "range": true,
           "instant": false,
-          "refId": "M",
+          "refId": "A",
           "legendFormat": "{{mode}}"
         }
       ],
@@ -995,9 +1943,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 31
       },
-      "id": 16,
+      "id": 27,
       "options": {
         "legend": {
           "calcs": [
@@ -1024,7 +1972,7 @@
           "expr": "(1 - rate(windows_cpu_time_total{instance=~\"$instance\",mode=\"idle\"}[$__rate_interval])) * 100",
           "range": true,
           "instant": false,
-          "refId": "N",
+          "refId": "B",
           "legendFormat": "core {{core}}"
         }
       ],
@@ -1091,9 +2039,9 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 19
+        "y": 39
       },
-      "id": 17,
+      "id": 28,
       "options": {
         "legend": {
           "calcs": [
@@ -1120,7 +2068,7 @@
           "expr": "windows_cpu_core_frequency_mhz{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "O",
+          "refId": "C",
           "legendFormat": "core {{core}}"
         }
       ],
@@ -1187,9 +2135,9 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 19
+        "y": 39
       },
-      "id": 18,
+      "id": 29,
       "options": {
         "legend": {
           "calcs": [
@@ -1216,7 +2164,7 @@
           "expr": "sum(rate(windows_cpu_interrupts_total{instance=~\"$instance\"}[$__rate_interval]))",
           "range": true,
           "instant": false,
-          "refId": "P",
+          "refId": "D",
           "legendFormat": "interrupts/s"
         },
         {
@@ -1228,7 +2176,7 @@
           "expr": "sum(rate(windows_cpu_dpcs_total{instance=~\"$instance\"}[$__rate_interval]))",
           "range": true,
           "instant": false,
-          "refId": "Q",
+          "refId": "E",
           "legendFormat": "dpcs/s"
         },
         {
@@ -1240,7 +2188,7 @@
           "expr": "sum(rate(windows_cpu_clock_interrupts_total{instance=~\"$instance\"}[$__rate_interval]))",
           "range": true,
           "instant": false,
-          "refId": "R",
+          "refId": "F",
           "legendFormat": "clock interrupts/s"
         }
       ],
@@ -1307,9 +2255,9 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 19
+        "y": 39
       },
-      "id": 19,
+      "id": 30,
       "options": {
         "legend": {
           "calcs": [
@@ -1336,7 +2284,7 @@
           "expr": "sum by (state) (rate(windows_cpu_cstate_seconds_total{instance=~\"$instance\"}[$__rate_interval]))",
           "range": true,
           "instant": false,
-          "refId": "S",
+          "refId": "G",
           "legendFormat": "{{state}}"
         }
       ],
@@ -1349,9 +2297,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 46
       },
-      "id": 20,
+      "id": 31,
       "panels": [],
       "title": "Memory",
       "type": "row"
@@ -1416,9 +2364,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 47
       },
-      "id": 21,
+      "id": 32,
       "options": {
         "legend": {
           "calcs": [
@@ -1445,7 +2393,7 @@
           "expr": "windows_memory_physical_total_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "T",
+          "refId": "H",
           "legendFormat": "total"
         },
         {
@@ -1457,7 +2405,7 @@
           "expr": "windows_memory_physical_total_bytes{instance=~\"$instance\"} - windows_memory_available_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "U",
+          "refId": "I",
           "legendFormat": "used"
         },
         {
@@ -1469,7 +2417,7 @@
           "expr": "windows_memory_available_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "V",
+          "refId": "J",
           "legendFormat": "available"
         },
         {
@@ -1481,7 +2429,7 @@
           "expr": "windows_memory_committed_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "W",
+          "refId": "K",
           "legendFormat": "committed"
         },
         {
@@ -1493,7 +2441,7 @@
           "expr": "windows_memory_commit_limit{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "X",
+          "refId": "L",
           "legendFormat": "commit limit"
         }
       ],
@@ -1560,9 +2508,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 47
       },
-      "id": 22,
+      "id": 33,
       "options": {
         "legend": {
           "calcs": [
@@ -1589,7 +2537,7 @@
           "expr": "windows_memory_cache_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "Y",
+          "refId": "M",
           "legendFormat": "cache"
         },
         {
@@ -1601,7 +2549,7 @@
           "expr": "windows_memory_pool_paged_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "Z",
+          "refId": "N",
           "legendFormat": "pool paged"
         },
         {
@@ -1613,7 +2561,7 @@
           "expr": "windows_memory_pool_nonpaged_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "A",
+          "refId": "O",
           "legendFormat": "pool nonpaged"
         },
         {
@@ -1625,7 +2573,7 @@
           "expr": "windows_memory_modified_page_list_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "B",
+          "refId": "P",
           "legendFormat": "modified"
         },
         {
@@ -1637,7 +2585,7 @@
           "expr": "windows_memory_standby_cache_normal_priority_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "C",
+          "refId": "Q",
           "legendFormat": "standby (normal)"
         },
         {
@@ -1649,7 +2597,7 @@
           "expr": "windows_memory_standby_cache_reserve_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "D",
+          "refId": "R",
           "legendFormat": "standby (reserve)"
         },
         {
@@ -1661,7 +2609,7 @@
           "expr": "windows_memory_standby_cache_core_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "E",
+          "refId": "S",
           "legendFormat": "standby (core)"
         },
         {
@@ -1673,7 +2621,7 @@
           "expr": "windows_memory_free_and_zero_page_list_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "F",
+          "refId": "T",
           "legendFormat": "free & zero"
         }
       ],
@@ -1740,9 +2688,9 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 35
+        "y": 55
       },
-      "id": 23,
+      "id": 34,
       "options": {
         "legend": {
           "calcs": [
@@ -1769,7 +2717,7 @@
           "expr": "rate(windows_memory_page_faults_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "G",
+          "refId": "U",
           "legendFormat": "page faults"
         },
         {
@@ -1781,7 +2729,7 @@
           "expr": "rate(windows_memory_cache_faults_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "H",
+          "refId": "V",
           "legendFormat": "cache faults"
         },
         {
@@ -1793,7 +2741,7 @@
           "expr": "rate(windows_memory_demand_zero_faults_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "I",
+          "refId": "W",
           "legendFormat": "demand zero faults"
         },
         {
@@ -1805,7 +2753,7 @@
           "expr": "rate(windows_memory_transition_faults_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "J",
+          "refId": "X",
           "legendFormat": "transition faults"
         }
       ],
@@ -1872,9 +2820,9 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 35
+        "y": 55
       },
-      "id": 24,
+      "id": 35,
       "options": {
         "legend": {
           "calcs": [
@@ -1901,7 +2849,7 @@
           "expr": "rate(windows_memory_swap_pages_read_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "K",
+          "refId": "Y",
           "legendFormat": "pages read"
         },
         {
@@ -1913,7 +2861,7 @@
           "expr": "rate(windows_memory_swap_pages_written_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "L",
+          "refId": "Z",
           "legendFormat": "pages written"
         },
         {
@@ -1925,7 +2873,7 @@
           "expr": "rate(windows_memory_swap_page_operations_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "M",
+          "refId": "A",
           "legendFormat": "page operations"
         }
       ],
@@ -1992,9 +2940,9 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 35
+        "y": 55
       },
-      "id": 25,
+      "id": 36,
       "options": {
         "legend": {
           "calcs": [
@@ -2021,7 +2969,7 @@
           "expr": "windows_memory_pool_paged_resident_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "N",
+          "refId": "B",
           "legendFormat": "pool paged resident"
         },
         {
@@ -2033,7 +2981,7 @@
           "expr": "windows_memory_system_cache_resident_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "O",
+          "refId": "C",
           "legendFormat": "system cache resident"
         },
         {
@@ -2045,7 +2993,7 @@
           "expr": "windows_memory_system_driver_resident_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "P",
+          "refId": "D",
           "legendFormat": "driver resident"
         },
         {
@@ -2057,7 +3005,7 @@
           "expr": "windows_memory_system_code_resident_bytes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "Q",
+          "refId": "E",
           "legendFormat": "code resident"
         }
       ],
@@ -2070,9 +3018,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 62
       },
-      "id": 26,
+      "id": 37,
       "panels": [],
       "title": "Disk",
       "type": "row"
@@ -2115,9 +3063,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 43
+        "y": 63
       },
-      "id": 27,
+      "id": 38,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
@@ -2140,7 +3088,7 @@
           "expr": "(1 - windows_logical_disk_free_bytes{instance=~\"$instance\",volume=~\"$volume\"} / windows_logical_disk_size_bytes{instance=~\"$instance\",volume=~\"$volume\"}) * 100",
           "range": true,
           "instant": false,
-          "refId": "R",
+          "refId": "F",
           "legendFormat": "{{volume}}"
         }
       ],
@@ -2207,9 +3155,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 43
+        "y": 63
       },
-      "id": 28,
+      "id": 39,
       "options": {
         "legend": {
           "calcs": [
@@ -2236,7 +3184,7 @@
           "expr": "rate(windows_logical_disk_read_bytes_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "S",
+          "refId": "G",
           "legendFormat": "{{volume}} read"
         },
         {
@@ -2248,7 +3196,7 @@
           "expr": "rate(windows_logical_disk_write_bytes_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "T",
+          "refId": "H",
           "legendFormat": "{{volume}} write"
         }
       ],
@@ -2315,9 +3263,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 43
+        "y": 63
       },
-      "id": 29,
+      "id": 40,
       "options": {
         "legend": {
           "calcs": [
@@ -2344,7 +3292,7 @@
           "expr": "rate(windows_logical_disk_reads_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "U",
+          "refId": "I",
           "legendFormat": "{{volume}} reads"
         },
         {
@@ -2356,7 +3304,7 @@
           "expr": "rate(windows_logical_disk_writes_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "V",
+          "refId": "J",
           "legendFormat": "{{volume}} writes"
         }
       ],
@@ -2423,9 +3371,9 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 51
+        "y": 71
       },
-      "id": 30,
+      "id": 41,
       "options": {
         "legend": {
           "calcs": [
@@ -2452,7 +3400,7 @@
           "expr": "rate(windows_logical_disk_read_latency_seconds_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval]) / clamp_min(rate(windows_logical_disk_reads_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval]), 1)",
           "range": true,
           "instant": false,
-          "refId": "W",
+          "refId": "K",
           "legendFormat": "{{volume}} read"
         },
         {
@@ -2464,7 +3412,7 @@
           "expr": "rate(windows_logical_disk_write_latency_seconds_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval]) / clamp_min(rate(windows_logical_disk_writes_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval]), 1)",
           "range": true,
           "instant": false,
-          "refId": "X",
+          "refId": "L",
           "legendFormat": "{{volume}} write"
         }
       ],
@@ -2531,9 +3479,9 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 51
+        "y": 71
       },
-      "id": 31,
+      "id": 42,
       "options": {
         "legend": {
           "calcs": [
@@ -2560,7 +3508,7 @@
           "expr": "windows_logical_disk_requests_queued{instance=~\"$instance\",volume=~\"$volume\"}",
           "range": true,
           "instant": false,
-          "refId": "Y",
+          "refId": "M",
           "legendFormat": "{{volume}}"
         }
       ],
@@ -2629,9 +3577,9 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 51
+        "y": 71
       },
-      "id": 32,
+      "id": 43,
       "options": {
         "legend": {
           "calcs": [
@@ -2658,7 +3606,7 @@
           "expr": "(1 - rate(windows_logical_disk_idle_seconds_total{instance=~\"$instance\",volume=~\"$volume\"}[$__rate_interval])) * 100",
           "range": true,
           "instant": false,
-          "refId": "Z",
+          "refId": "N",
           "legendFormat": "{{volume}}"
         }
       ],
@@ -2703,9 +3651,9 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 78
       },
-      "id": 33,
+      "id": 44,
       "options": {
         "displayMode": "gradient",
         "orientation": "horizontal",
@@ -2728,7 +3676,7 @@
           "expr": "windows_logical_disk_free_bytes{instance=~\"$instance\",volume=~\"$volume\"}",
           "range": true,
           "instant": false,
-          "refId": "A",
+          "refId": "O",
           "legendFormat": "{{volume}}"
         }
       ],
@@ -2741,9 +3689,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 82
       },
-      "id": 34,
+      "id": 45,
       "panels": [],
       "title": "Network",
       "type": "row"
@@ -2808,9 +3756,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 83
       },
-      "id": 35,
+      "id": 46,
       "options": {
         "legend": {
           "calcs": [
@@ -2837,7 +3785,7 @@
           "expr": "rate(windows_net_bytes_received_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "B",
+          "refId": "P",
           "legendFormat": "{{nic}} recv"
         },
         {
@@ -2849,7 +3797,7 @@
           "expr": "rate(windows_net_bytes_sent_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "C",
+          "refId": "Q",
           "legendFormat": "{{nic}} sent"
         }
       ],
@@ -2916,9 +3864,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 63
+        "y": 83
       },
-      "id": 36,
+      "id": 47,
       "options": {
         "legend": {
           "calcs": [
@@ -2945,7 +3893,7 @@
           "expr": "rate(windows_net_packets_received_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "D",
+          "refId": "R",
           "legendFormat": "{{nic}} recv"
         },
         {
@@ -2957,7 +3905,7 @@
           "expr": "rate(windows_net_packets_sent_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "E",
+          "refId": "S",
           "legendFormat": "{{nic}} sent"
         }
       ],
@@ -3024,9 +3972,9 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 71
+        "y": 91
       },
-      "id": 37,
+      "id": 48,
       "options": {
         "legend": {
           "calcs": [
@@ -3053,7 +4001,7 @@
           "expr": "rate(windows_net_packets_received_errors_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "F",
+          "refId": "T",
           "legendFormat": "{{nic}} recv err"
         },
         {
@@ -3065,7 +4013,7 @@
           "expr": "rate(windows_net_packets_outbound_errors_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "G",
+          "refId": "U",
           "legendFormat": "{{nic}} send err"
         }
       ],
@@ -3132,9 +4080,9 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 71
+        "y": 91
       },
-      "id": 38,
+      "id": 49,
       "options": {
         "legend": {
           "calcs": [
@@ -3161,7 +4109,7 @@
           "expr": "rate(windows_net_packets_received_discarded_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "H",
+          "refId": "V",
           "legendFormat": "{{nic}} recv discard"
         },
         {
@@ -3173,7 +4121,7 @@
           "expr": "rate(windows_net_packets_outbound_discarded_total{instance=~\"$instance\",nic=~\"$nic\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "I",
+          "refId": "W",
           "legendFormat": "{{nic}} send discard"
         }
       ],
@@ -3240,9 +4188,9 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 71
+        "y": 91
       },
-      "id": 39,
+      "id": 50,
       "options": {
         "legend": {
           "calcs": [
@@ -3269,7 +4217,7 @@
           "expr": "windows_net_output_queue_length_packets{instance=~\"$instance\",nic=~\"$nic\"}",
           "range": true,
           "instant": false,
-          "refId": "J",
+          "refId": "X",
           "legendFormat": "{{nic}}"
         }
       ],
@@ -3282,9 +4230,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 78
+        "y": 98
       },
-      "id": 40,
+      "id": 51,
       "panels": [],
       "title": "System",
       "type": "row"
@@ -3349,9 +4297,9 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 79
+        "y": 99
       },
-      "id": 41,
+      "id": 52,
       "options": {
         "legend": {
           "calcs": [
@@ -3378,7 +4326,7 @@
           "expr": "windows_system_processes{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "K",
+          "refId": "Y",
           "legendFormat": "processes"
         },
         {
@@ -3390,7 +4338,7 @@
           "expr": "windows_system_threads{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "L",
+          "refId": "Z",
           "legendFormat": "threads"
         }
       ],
@@ -3457,9 +4405,9 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 79
+        "y": 99
       },
-      "id": 42,
+      "id": 53,
       "options": {
         "legend": {
           "calcs": [
@@ -3486,7 +4434,7 @@
           "expr": "rate(windows_system_context_switches_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "M",
+          "refId": "A",
           "legendFormat": "context switches/s"
         },
         {
@@ -3498,7 +4446,7 @@
           "expr": "rate(windows_system_system_calls_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "N",
+          "refId": "B",
           "legendFormat": "system calls/s"
         }
       ],
@@ -3565,9 +4513,9 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 79
+        "y": 99
       },
-      "id": 43,
+      "id": 54,
       "options": {
         "legend": {
           "calcs": [
@@ -3594,7 +4542,7 @@
           "expr": "windows_system_processor_queue_length{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "O",
+          "refId": "C",
           "legendFormat": "processor queue length"
         },
         {
@@ -3606,7 +4554,7 @@
           "expr": "rate(windows_system_exception_dispatches_total{instance=~\"$instance\"}[$__rate_interval])",
           "range": true,
           "instant": false,
-          "refId": "P",
+          "refId": "D",
           "legendFormat": "exception dispatches/s"
         }
       ],
@@ -3619,9 +4567,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 86
+        "y": 106
       },
-      "id": 44,
+      "id": 55,
       "panels": [],
       "title": "Services & Exporter",
       "type": "row"
@@ -3655,9 +4603,9 @@
         "h": 5,
         "w": 4,
         "x": 0,
-        "y": 87
+        "y": 107
       },
-      "id": 45,
+      "id": 56,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -3683,7 +4631,7 @@
           "expr": "count(windows_service_state{instance=~\"$instance\",state=\"running\"} == 1)",
           "range": false,
           "instant": true,
-          "refId": "Q",
+          "refId": "E",
           "legendFormat": "running"
         }
       ],
@@ -3719,9 +4667,9 @@
         "h": 5,
         "w": 4,
         "x": 4,
-        "y": 87
+        "y": 107
       },
-      "id": 46,
+      "id": 57,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -3747,7 +4695,7 @@
           "expr": "count(windows_service_state{instance=~\"$instance\",state=\"stopped\"} == 1)",
           "range": false,
           "instant": true,
-          "refId": "R",
+          "refId": "F",
           "legendFormat": "stopped"
         }
       ],
@@ -3784,9 +4732,9 @@
         "h": 5,
         "w": 4,
         "x": 8,
-        "y": 87
+        "y": 107
       },
-      "id": 47,
+      "id": 58,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -3812,7 +4760,7 @@
           "expr": "windows_exporter_scrape_duration_seconds{instance=~\"$instance\"}",
           "range": false,
           "instant": true,
-          "refId": "S",
+          "refId": "G",
           "legendFormat": "scrape"
         }
       ],
@@ -3879,9 +4827,9 @@
         "h": 5,
         "w": 12,
         "x": 12,
-        "y": 87
+        "y": 107
       },
-      "id": 48,
+      "id": 59,
       "options": {
         "legend": {
           "calcs": [
@@ -3908,7 +4856,7 @@
           "expr": "windows_exporter_collector_duration_seconds{instance=~\"$instance\"}",
           "range": true,
           "instant": false,
-          "refId": "T",
+          "refId": "H",
           "legendFormat": "{{collector}}"
         }
       ],
@@ -3950,6 +4898,48 @@
         "query": {
           "query": "label_values(windows_os_info, instance)",
           "refId": "win-instance"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prometheus}"
+        },
+        "definition": "label_values(ohm_cpu_celsius, instance)",
+        "includeAll": false,
+        "label": "GPU/SSD Temp Host (OhmGraphite)",
+        "multi": false,
+        "name": "ohm_instance",
+        "options": [],
+        "query": {
+          "query": "label_values(ohm_cpu_celsius, instance)",
+          "refId": "ohm-instance"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prometheus}"
+        },
+        "definition": "label_values(coretemp_up, instance)",
+        "includeAll": false,
+        "label": "CPU Temp Host (Core Temp)",
+        "multi": false,
+        "name": "coretemp_instance",
+        "options": [],
+        "query": {
+          "query": "label_values(coretemp_up, instance)",
+          "refId": "coretemp-instance"
         },
         "refresh": 1,
         "regex": "",
