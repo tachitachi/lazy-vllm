@@ -12,7 +12,7 @@ scrape_configs:
       - targets: ['host.docker.internal:9100']
         labels:
           host: linux-server
-      - targets: ['fast-qwen:9100']
+      - targets: ['fast-qwen:9182']
         labels:
           host: fast-qwen
 

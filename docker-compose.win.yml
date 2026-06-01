@@ -1,19 +1,8 @@
 services:
-  node-exporter:
-    image: prom/node-exporter:latest
-    network_mode: host
-    pid: host
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - --path.procfs=/host/proc
-      - --path.rootfs=/rootfs
-      - --path.sysfs=/host/sys
-      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
-    restart: always
-
+  # NOTE: node-exporter is NOT included here. Windows host metrics are collected
+  # by prometheus-community/windows_exporter running as a native Windows service.
+  # See scripts/install-windows-exporter.ps1 for installation instructions.
+  #
   nvidia-gpu-exporter:
     image: utkuozdemir/nvidia_gpu_exporter:1.4.1
     ports:
