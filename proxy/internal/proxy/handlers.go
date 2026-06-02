@@ -75,7 +75,7 @@ func (s *Server) HandleChatCompletions(
 		if p.CountTokens {
 			tokenCount = s.countOpenAITokens(p.URL, body)
 		}
-		s.forwardWithLogging(w, r, body, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, false)
+		s.forwardWithLogging(w, r, body, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, false, p.InjectObsInstructions)
 		return
 	}
 	model, cleanedBody := extractModel(body)
@@ -84,7 +84,7 @@ func (s *Server) HandleChatCompletions(
 	if backend.CountTokens {
 		tokenCount = s.countOpenAITokens(backend.URL, cleanedBody)
 	}
-	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model))
+	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model), backend.InjectObsInstructions)
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, compactLogger *logger.CompactLogger) {
@@ -96,7 +96,7 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []b
 		if p.CountTokens {
 			tokenCount = s.countAnthropicTokens(p.URL, body)
 		}
-		s.forwardWithLogging(w, r, body, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, false)
+		s.forwardWithLogging(w, r, body, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, false, p.InjectObsInstructions)
 		return
 	}
 	model, cleanedBody := extractModel(body)
@@ -105,7 +105,7 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []b
 	if backend.CountTokens {
 		tokenCount = s.countAnthropicTokens(backend.URL, cleanedBody)
 	}
-	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model))
+	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model), backend.InjectObsInstructions)
 }
 
 func (s *Server) forwardWithLogging(
@@ -119,6 +119,7 @@ func (s *Server) forwardWithLogging(
 	tokenCount int,
 	model string,
 	isFlash bool,
+	injectObs bool,
 ) {
 	provider := ProviderFromCtx(r.Context())
 	user     := UserFromCtx(r.Context())
@@ -129,8 +130,8 @@ func (s *Server) forwardWithLogging(
 	if provider != "" && provider != "local" {
 		p, _ := lookupProvider(s.Providers, provider)
 		baseURL = p.URL
-		// Non-local: no FLASH injection; obs instruction still applies
-		if compactLogger != nil && !isProbeRequest(body) {
+		// Non-local: no FLASH injection; obs instruction applies when enabled
+		if injectObs && compactLogger != nil && !isProbeRequest(body) {
 			bodyToForward = injectObsInstruction(body, format)
 		} else {
 			bodyToForward = body
@@ -142,7 +143,7 @@ func (s *Server) forwardWithLogging(
 
 		if effectiveFlash {
 			bodyToForward = injectDisableThinking(body)
-		} else if compactLogger != nil && !isProbeRequest(body) {
+		} else if injectObs && compactLogger != nil && !isProbeRequest(body) {
 			bodyToForward = injectObsInstruction(body, format)
 		} else {
 			bodyToForward = body

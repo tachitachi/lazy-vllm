@@ -277,11 +277,13 @@ services:
       ENABLE_SYSTEM_REMINDER: true
       BACKENDS_MAP: >-
         [
-          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://fast-qwen:8000","count_tokens":true}
+          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://fast-qwen:8000","count_tokens":true,"inject_obs_instructions":true},
+          {"name":"Qwen3.6-27B-Text-NVFP4-MTP-OVERFLOW","url":"http://qwen36-27b:8000","count_tokens":true,"inject_obs_instructions":true},
+          {"name":"gemma-4-26B-A4B-it","url":"http://gemma4:8000","count_tokens":true,"inject_obs_instructions":true}
         ]
       PROVIDERS_MAP: >-
         [
-          {"name":"anthropic","url":"https://api.anthropic.com","count_tokens":false}
+          {"name":"anthropic","url":"https://api.anthropic.com","count_tokens":false,"inject_obs_instructions":false}
         ]
       # ROUTING_RULES: >-
       #   [
