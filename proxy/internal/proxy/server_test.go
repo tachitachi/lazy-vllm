@@ -568,3 +568,39 @@ func TestInjectThinkingTokenBudget_InvalidJSON_ReturnsError(t *testing.T) {
 		t.Error("expected error for invalid JSON")
 	}
 }
+
+// --- requestDisableThinking ---
+
+func TestRequestDisableThinking_Disabled(t *testing.T) {
+	body := []byte(`{"model":"test","thinking":{"type":"disabled"}}`)
+	if !requestDisableThinking(body) {
+		t.Error("expected true for thinking.type=disabled")
+	}
+}
+
+func TestRequestDisableThinking_Adaptive(t *testing.T) {
+	body := []byte(`{"model":"test","thinking":{"type":"adaptive"}}`)
+	if requestDisableThinking(body) {
+		t.Error("expected false for thinking.type=adaptive")
+	}
+}
+
+func TestRequestDisableThinking_NoThinkingField(t *testing.T) {
+	body := []byte(`{"model":"test","max_tokens":8192}`)
+	if requestDisableThinking(body) {
+		t.Error("expected false when thinking field is absent")
+	}
+}
+
+func TestRequestDisableThinking_EmptyThinking(t *testing.T) {
+	body := []byte(`{"model":"test","thinking":{}}`)
+	if requestDisableThinking(body) {
+		t.Error("expected false for empty thinking object")
+	}
+}
+
+func TestRequestDisableThinking_InvalidJSON(t *testing.T) {
+	if requestDisableThinking([]byte("not json")) {
+		t.Error("expected false for invalid JSON")
+	}
+}

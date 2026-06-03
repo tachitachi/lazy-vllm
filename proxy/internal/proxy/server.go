@@ -149,6 +149,30 @@ func effortTokenBudget(effort string) (tokens int, disable bool) {
 	}
 }
 
+// requestDisableThinking checks the Anthropic root-level "thinking" field.
+// Returns true when thinking.type == "disabled", signaling that the client
+// explicitly opted out of thinking and the proxy should inject the disable
+// mutation for local backends.
+func requestDisableThinking(body []byte) bool {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return false
+	}
+	raw, ok := obj["thinking"]
+	if !ok {
+		return false
+	}
+	var thinking map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &thinking); err != nil {
+		return false
+	}
+	var t string
+	if err := json.Unmarshal(thinking["type"], &t); err != nil {
+		return false
+	}
+	return t == "disabled"
+}
+
 // extractEffort reads reasoning_effort (OpenAI) or output_config.effort (Anthropic).
 // Returns "" if neither field is present.
 func extractEffort(body []byte) string {

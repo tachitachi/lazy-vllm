@@ -139,7 +139,8 @@ func (s *Server) forwardWithLogging(
 	} else {
 		// Local: apply FLASH, thinking budget, and routing rules
 		budget, disableThinking := computeThinkingBudget(body, s.ThinkingBudgetFraction)
-		effectiveFlash := isFlash || disableThinking
+		thinkDisabledByClient := requestDisableThinking(body)
+		effectiveFlash := isFlash || disableThinking || thinkDisabledByClient
 
 		if effectiveFlash {
 			bodyToForward = injectDisableThinking(body)
@@ -254,7 +255,7 @@ func (s *Server) HandleGenericProxy(w http.ResponseWriter, r *http.Request, body
 		model, cleanedBody := extractModel(body)
 		baseURL = resolveBackend(s.Backends, stripFlash(model))
 		bodyToForward = cleanedBody
-		if isFlashModel(model) {
+		if isFlashModel(model) || requestDisableThinking(body) {
 			bodyToForward = injectDisableThinking(body)
 		}
 	}
