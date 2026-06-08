@@ -9,7 +9,7 @@ fi
 
 # Activate venv if not already active
 if [ -z "$VIRTUAL_ENV" ]; then
-  source .venv/bin/activate
+  source .venv/Scripts/activate
 fi
 
 # Run vllm serve
@@ -17,7 +17,7 @@ vllm serve \
   --model=sakamakismile/Qwen3.6-27B-Text-NVFP4-MTP \
   --served-model-name=Qwen3.6-27B-Text-NVFP4-MTP \
   --max-model-len=200000 \
-  --gpu-memory-utilization=0.95 \
+  --gpu-memory-utilization=0.90 \
   --kv-cache-dtype=fp8 \
   --host=0.0.0.0 \
   --port=8000 \
