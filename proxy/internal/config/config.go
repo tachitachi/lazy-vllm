@@ -52,10 +52,11 @@ func ParseLogLevel(s string) slog.Level {
 
 // Backend maps one BACKENDS_MAP entry.
 type Backend struct {
-	Name                 string `json:"name"`
-	URL                  string `json:"url"`
+	Name                  string `json:"name"`
+	URL                   string `json:"url"`
 	CountTokens           bool   `json:"count_tokens"`
 	InjectObsInstructions bool   `json:"inject_obs_instructions"`
+	InjectThinkingBudget  bool   `json:"inject_thinking_budget"`
 }
 
 // Provider maps one PROVIDERS_MAP entry. "local" is a reserved provider name.

@@ -75,7 +75,7 @@ func (s *Server) HandleChatCompletions(
 		if p.CountTokens {
 			tokenCount = s.countOpenAITokens(p.URL, body)
 		}
-		s.forwardWithLogging(w, r, body, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, false, p.InjectObsInstructions)
+		s.forwardWithLogging(w, r, body, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, false, p.InjectObsInstructions, false)
 		return
 	}
 	model, cleanedBody := extractModel(body)
@@ -84,7 +84,7 @@ func (s *Server) HandleChatCompletions(
 	if backend.CountTokens {
 		tokenCount = s.countOpenAITokens(backend.URL, cleanedBody)
 	}
-	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model), backend.InjectObsInstructions)
+	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "openai", logger.ParseMessages, logger.ParseOpenAIOutput, tokenCount, model, isFlashModel(model), backend.InjectObsInstructions, backend.InjectThinkingBudget)
 }
 
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []byte, compactLogger *logger.CompactLogger) {
@@ -96,7 +96,7 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []b
 		if p.CountTokens {
 			tokenCount = s.countAnthropicTokens(p.URL, body)
 		}
-		s.forwardWithLogging(w, r, body, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, false, p.InjectObsInstructions)
+		s.forwardWithLogging(w, r, body, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, false, p.InjectObsInstructions, false)
 		return
 	}
 	model, cleanedBody := extractModel(body)
@@ -105,7 +105,7 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request, body []b
 	if backend.CountTokens {
 		tokenCount = s.countAnthropicTokens(backend.URL, cleanedBody)
 	}
-	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model), backend.InjectObsInstructions)
+	s.forwardWithLogging(w, r, cleanedBody, compactLogger, "anthropic", logger.ParseAnthropicMessages, logger.ParseAnthropicOutput, tokenCount, model, isFlashModel(model), backend.InjectObsInstructions, backend.InjectThinkingBudget)
 }
 
 func (s *Server) forwardWithLogging(
@@ -120,6 +120,7 @@ func (s *Server) forwardWithLogging(
 	model string,
 	isFlash bool,
 	injectObs bool,
+	injectThinkingBudget bool,
 ) {
 	provider := ProviderFromCtx(r.Context())
 	user     := UserFromCtx(r.Context())
@@ -150,7 +151,7 @@ func (s *Server) forwardWithLogging(
 			bodyToForward = body
 		}
 
-		if !effectiveFlash {
+		if !effectiveFlash && injectThinkingBudget {
 			if injected, err := injectThinkingTokenBudget(bodyToForward, budget); err == nil {
 				bodyToForward = injected
 			} else {

@@ -45,10 +45,116 @@ services:
       - --max-num-batched-tokens=8192
       - '--default-chat-template-kwargs={"enable_thinking": true}'
       - '--speculative-config={"model": "google/gemma-4-26B-A4B-it-assistant", "num_speculative_tokens": 3}'
+      - '--mm-processor-kwargs={"max_soft_tokens": 1120}'
       - --mm-processor-cache-type=lru
       - --mm-processor-cache-gb=8
     profiles:
       - gemma4
+
+  diffusion-gemma:
+    image: vllm/vllm-openai:gemma
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.gemma4
+    ports:
+      - "8005:8000"
+    ipc: host
+    shm_size: '16g'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: always
+    command:
+      - --model=RedHatAI/diffusiongemma-26B-A4B-it-NVFP4
+      - --served-model-name=diffusiongemma-26B-A4B-it
+      - --max-model-len=262144
+      - --gpu-memory-utilization=0.40
+      # - --quantization=fp8
+      - --kv-cache-dtype=fp8
+      - --host=0.0.0.0
+      - --port=8000
+      - --async-scheduling
+      - --enable-auto-tool-choice
+      - --reasoning-parser=gemma4
+      - --tool-call-parser=gemma4
+      - --chat-template=examples/tool_chat_template_gemma4.jinja
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --max-num-seqs=4
+      - --generation-config=vllm
+      - --max-num-batched-tokens=8192
+      - '--default-chat-template-kwargs={"enable_thinking": true}'
+      - '--hf-overrides={"diffusion_sampler": "entropy_bound", "diffusion_entropy_bound": 0.1}'
+      - '--diffusion-config={"canvas_length": 256}'
+      - '--mm-processor-kwargs={"max_soft_tokens": 1120}'
+      - --mm-processor-cache-type=lru
+      - --mm-processor-cache-gb=8
+    profiles:
+      - gemma4-12b
+
+
+
+  gemma4-12b:
+    image: vllm/vllm-openai:gemma4-unified
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.gemma4
+    ports:
+      - "8004:8000"
+    ipc: host
+    shm_size: '16g'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 600s
+    volumes:
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: always
+    command:
+      - --model=google/gemma-4-12B-it-qat-w4a16-ct
+      - --served-model-name=gemma-4-12B-it
+      - --max-model-len=262144
+      - --gpu-memory-utilization=0.40
+      # - --quantization=fp8
+      - --kv-cache-dtype=fp8
+      - --host=0.0.0.0
+      - --port=8000
+      - --async-scheduling
+      - --enable-auto-tool-choice
+      - --reasoning-parser=gemma4
+      - --tool-call-parser=gemma4
+      - --chat-template=examples/tool_chat_template_gemma4.jinja
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --max-num-seqs=64
+      - --max-num-batched-tokens=8192
+      - '--default-chat-template-kwargs={"enable_thinking": true}'
+      - '--speculative-config={"model": "google/gemma-4-12B-it-assistant", "num_speculative_tokens": 3}'
+      - --mm-processor-cache-type=lru
+      - --mm-processor-cache-gb=8
+    profiles:
+      - gemma4-12b
 
   qwen36:
     image: vllm/vllm-openai:nightly-1acd67a795ebccdf9b9db7697ae9082058301657
@@ -277,9 +383,10 @@ services:
       ENABLE_SYSTEM_REMINDER: true
       BACKENDS_MAP: >-
         [
-          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://fast-qwen:8000","count_tokens":true,"inject_obs_instructions":true},
-          {"name":"Qwen3.6-27B-Text-NVFP4-MTP-OVERFLOW","url":"http://qwen36-27b:8000","count_tokens":true,"inject_obs_instructions":true},
-          {"name":"gemma-4-26B-A4B-it","url":"http://gemma4:8000","count_tokens":true,"inject_obs_instructions":true}
+          {"name":"Qwen3.6-27B-Text-NVFP4-MTP","url":"http://fast-qwen:8000","count_tokens":true,"inject_obs_instructions":false,"inject_thinking_budget":true},
+          {"name":"gemma-4-12B-it","url":"http://gemma4-12b:8000","count_tokens":true,"inject_obs_instructions":false,"inject_thinking_budget":true},
+          {"name":"gemma-4-26B-A4B-it","url":"http://gemma4:8000","count_tokens":true,"inject_obs_instructions":false,"inject_thinking_budget":true},
+          {"name":"diffusiongemma-26B-A4B-it","url":"http://diffusion-gemma:8000","count_tokens":true,"inject_obs_instructions":false,"inject_thinking_budget":false}
         ]
       PROVIDERS_MAP: >-
         [
